@@ -2,7 +2,8 @@
 #
 # EOF (end-of-file) token is used to indicate that
 # there is no more input left for lexical analysis
-INTEGER, PLUS, MINUS, EOF = 'INTEGER', 'PLUS', 'MINUS', 'EOF'
+PLUS, MINUS, MULTIPLICATION, DIVSION = 'PLUS', 'MINUS', 'MULTIPLICATION', 'DIVSION'
+INTEGER, EOF = 'INTEGER', 'EOF'
 
 
 class Token(object):
@@ -78,11 +79,19 @@ class Interpreter(object):
 
             if self.current_char == '+':
                 self.advance()
-                return Token(PLUS, '+')
+                return Token(PLUS, self.current_char)
 
             if self.current_char == '-':
                 self.advance()
-                return Token(MINUS, '-')
+                return Token(MINUS, self.current_char)
+
+            if self.current_char == '*':
+                self.advance()
+                return Token(MULTIPLICATION, self.current_char)
+
+            if self.current_char == '/':
+                self.advance()
+                return Token(DIVSION, self.current_char)
 
             self.error()
 
@@ -104,31 +113,33 @@ class Interpreter(object):
         self.current_token = self.get_next_token()
 
         # we expect the current token to be a single-digit integer
-        left = self.current_token
+        result = self.current_token.value
         self.eat(INTEGER)
 
-        # we expect the current token to be either a '+' or '-'
-        op = self.current_token
-        if op.type == PLUS:
-            self.eat(PLUS)
-        else:
-            self.eat(MINUS)
+        while self.current_char:
+            # we expect the current token to be either a '+' or '-'
+            op = self.current_token
+            self.eat(op.type)
 
-        # we expect the current token to be a single-digit integer
-        right = self.current_token
-        self.eat(INTEGER)
-        # after the above call the self.current_token is set to
-        # EOF token
+            # we expect the current token to be a single-digit integer
+            right = self.current_token
+            self.eat(INTEGER)
+            # after the above call the self.current_token is set to
+            # EOF token
 
-        # at this point either the INTEGER PLUS INTEGER or
-        # the INTEGER MINUS INTEGER sequence of tokens
-        # has been successfully found and the method can just
-        # return the result of adding or subtracting two integers,
-        # thus effectively interpreting client input
-        if op.type == PLUS:
-            result = left.value + right.value
-        else:
-            result = left.value - right.value
+            # at this point either the INTEGER PLUS INTEGER or
+            # the INTEGER MINUS INTEGER sequence of tokens
+            # has been successfully found and the method can just
+            # return the result of adding or subtracting two integers,
+            # thus effectively interpreting client input
+            if op.type == MULTIPLICATION:
+                result = result * right.value
+            elif op.type == DIVSION:
+                result = result / right.value
+            elif op.type == PLUS:
+                result = result + right.value
+            elif op.type == MINUS:
+                result = result - right.value
 
         return result
 
