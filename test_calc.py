@@ -10,9 +10,14 @@ from calc import Interpreter
         pytest.param(" 2 * 101 ", 202),
         pytest.param(" 44 / 4 ", 11),
         pytest.param(" 2 + 3 + 4 - 5 + 6 ", 10),
+        pytest.param(" 777 ", 777),
     ]
 )
 def test_expressions(expression, expected_result):
     res = Interpreter(expression).expr()
 
     assert expected_result == res
+
+def test_invalid_expression():
+    with pytest.raises(Exception):
+        Interpreter("3 +").expr()

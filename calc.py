@@ -107,23 +107,27 @@ class Interpreter(object):
         else:
             self.error()
 
+    def term(self):
+        """Return an INTEGER token value"""
+        token = self.current_token
+        self.eat(INTEGER)
+        return token.value
+
     def expr(self):
         """expr -> INTEGER PLUS INTEGER"""
         # set current token to the first token taken from the input
         self.current_token = self.get_next_token()
 
         # we expect the current token to be a single-digit integer
-        result = self.current_token.value
-        self.eat(INTEGER)
+        result = self.term()
 
-        while self.current_char:
+        while self.current_token.type != EOF:
             # we expect the current token to be either a '+' or '-'
             op = self.current_token
             self.eat(op.type)
 
             # we expect the current token to be a single-digit integer
-            right = self.current_token
-            self.eat(INTEGER)
+            right = self.term()
             # after the above call the self.current_token is set to
             # EOF token
 
@@ -133,13 +137,13 @@ class Interpreter(object):
             # return the result of adding or subtracting two integers,
             # thus effectively interpreting client input
             if op.type == MULTIPLICATION:
-                result = result * right.value
+                result = result * right
             elif op.type == DIVSION:
-                result = result / right.value
+                result = result / right
             elif op.type == PLUS:
-                result = result + right.value
+                result = result + right
             elif op.type == MINUS:
-                result = result - right.value
+                result = result - right
 
         return result
 
