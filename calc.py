@@ -36,74 +36,64 @@ class Interpreter(object):
         self.pos = 0
         # current token instance
         self.current_token = None
+        self.current_char = self.text[self.pos]
 
     def error(self):
         raise Exception('Error parsing input')
 
+    def advance(self):
+        """Advance the 'pos' pointer and set the 'current_char' variable."""
+        self.pos += 1
+
+        if self.pos < len(self.text):
+            self.current_char = self.text[self.pos]
+        else:
+            self.current_char = ''  # Indicates end of input
+
     def skip_whitespaces(self):
-        while self.pos < len(self.text) and self.text[self.pos].isspace():
-            self.pos += 1
+        while self.current_char.isspace():
+            self.advance()
+
+    def integer(self):
+        """Return a (multidigit) integer consumed from the input."""
+        result = ''
+
+        while self.current_char.isdigit():
+            result += self.current_char
+            self.advance()
+
+        return int(result)
 
     def get_next_token(self):
         """Lexical analyzer (also known as scanner or tokenizer)
 
         This method is responsible for breaking a sentence
-        apart into tokens. One token at a time.
+        apart into tokens.
         """
-
         self.skip_whitespaces()
 
-        text = self.text
+        while self.current_char:
+            if self.current_char.isdigit():
+                return Token(INTEGER, self.integer())
 
-        # is self.pos index past the end of the self.text ?
-        # if so, then return EOF token because there is no more
-        # input left to convert into tokens
-        if self.pos > len(text) - 1:
-            return Token(EOF, None)
+            if self.current_char == '+':
+                self.advance()
+                return Token(PLUS, '+')
 
+            if self.current_char == '-':
+                self.advance()
+                return Token(MINUS, '-')
 
-        # get a character at the position self.pos and decide
-        # what token to create based on the single character
-        current_char = text[self.pos]
+            self.error()
 
-        # if the character is a digit then convert it to
-        # integer, create an INTEGER token, increment self.pos
-        # index to point to the next character after the digit,
-        # and return the INTEGER token
-
-        if current_char.isdigit():
-            chars = []
-            while current_char.isdigit():
-                chars.append(current_char)
-                self.pos += 1
-
-                if self.pos < len(text):
-                    current_char = text[self.pos]
-                else:
-                    current_char = ''
-
-            return Token(INTEGER, int("".join(chars)))
-
-        if current_char == '+':
-            token = Token(PLUS, current_char)
-            self.pos += 1
-            return token
-
-        if current_char == '-':
-            token = Token(MINUS, current_char)
-            self.pos += 1
-            return token
-
-        self.error()
+        return Token(EOF, None)
 
     def eat(self, token_type):
         # compare the current token type with the passed token
         # type and if they match then "eat" the current token
         # and assign the next token to the self.current_token,
         # otherwise raise an exception.
-        if isinstance(token_type, str) and self.current_token.type == token_type:
-            self.current_token = self.get_next_token()
-        elif isinstance(token_type, list) and self.current_token.type in token_type:
+        if self.current_token.type == token_type:
             self.current_token = self.get_next_token()
         else:
             self.error()
@@ -117,9 +107,12 @@ class Interpreter(object):
         left = self.current_token
         self.eat(INTEGER)
 
-        # we expect the current token to be a '+' token
+        # we expect the current token to be either a '+' or '-'
         op = self.current_token
-        self.eat([PLUS, MINUS])
+        if op.type == PLUS:
+            self.eat(PLUS)
+        else:
+            self.eat(MINUS)
 
         # we expect the current token to be a single-digit integer
         right = self.current_token
@@ -127,17 +120,17 @@ class Interpreter(object):
         # after the above call the self.current_token is set to
         # EOF token
 
-        # at this point INTEGER PLUS INTEGER sequence of tokens
+        # at this point either the INTEGER PLUS INTEGER or
+        # the INTEGER MINUS INTEGER sequence of tokens
         # has been successfully found and the method can just
-        # return the result of adding two integers, thus
-        # effectively interpreting client input
-        if op.value == "+":
-            return left.value + right.value
-        elif op.value == "-":
-            return left.value - right.value
+        # return the result of adding or subtracting two integers,
+        # thus effectively interpreting client input
+        if op.type == PLUS:
+            result = left.value + right.value
         else:
-            raise ValueError(f"unknown op: {op.value}")
+            result = left.value - right.value
 
+        return result
 
 def main():
     while True:
