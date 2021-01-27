@@ -4,11 +4,14 @@
 # there is no more input left for lexical analysis
 PLUS, MINUS, MUL, DIV = 'PLUS', 'MINUS', 'MUL', 'DIV'
 INTEGER, EOF = 'INTEGER', 'EOF'
+OPEN_PRS, CLOSE_PRS = "(", ")"
 
 # Grammar
-# expr : factor ((PLUS | MINUS) factor)*
-# factor : number ((MUL | DIV) number)*
-# number : INTEGER
+# expr : product ((PLUS | MINUS) product)*
+# product : number ((MUL | DIV) number)*
+# number : INTEGER | (expr)
+
+(2 + 2) * 2
 
 class Token(object):
     def __init__(self, type, value):
@@ -83,23 +86,41 @@ class Interpreter(object):
 
             if self.current_char == '+':
                 self.advance()
-                return Token(PLUS, self.current_char)
+                return Token(PLUS, "+")
 
             if self.current_char == '-':
                 self.advance()
-                return Token(MINUS, self.current_char)
+                return Token(MINUS, "-")
 
             if self.current_char == '*':
                 self.advance()
-                return Token(MUL, self.current_char)
+                return Token(MUL, "*")
 
             if self.current_char == '/':
                 self.advance()
-                return Token(DIV, self.current_char)
+                return Token(DIV, "/")
+
+            if self.current_char in (OPEN_PRS, CLOSE_PRS):
+                current_char = self.current_char
+                self.advance()
+                return Token(current_char, current_char)
 
             self.error()
 
         return Token(EOF, None)
+
+    def get_all_tokens(self):
+        res = []
+
+        while True:
+            token = self.get_next_token()
+            if token.type == EOF:
+                break
+            else:
+                print(token)
+                res.append(token.value)
+
+        return res
 
     def eat(self, token_type):
         # compare the current token type with the passed token
@@ -114,10 +135,21 @@ class Interpreter(object):
     def number(self):
         """Return an INTEGER token value"""
         token = self.current_token
-        self.eat(INTEGER)
-        return token.value
 
-    def factor(self):
+        if token.type == OPEN_PRS:
+            self.eat(OPEN_PRS)
+            res = self.expr(False)
+
+            if self.current_token.type == CLOSE_PRS:
+                self.eat(CLOSE_PRS)
+                return res
+            else:
+                self.error()
+        else:
+            self.eat(INTEGER)
+            return token.value
+
+    def product(self):
         # self.current_token = self.get_next_token()
         left = self.number()
 
@@ -132,19 +164,20 @@ class Interpreter(object):
 
         return left
 
-    def expr(self):
-        self.current_token = self.get_next_token()
+    def expr(self, next_token=True):
+        if next_token:
+            self.current_token = self.get_next_token()
 
-        left = self.factor()
+        left = self.product()
 
         while self.current_token.type in (PLUS, MINUS):
             token = self.current_token
             self.eat(token.type)
 
             if token.type == PLUS:
-                left = left + self.factor()
+                left = left + self.product()
             elif token.type == MINUS:
-                left = left - self.factor()
+                left = left - self.product()
 
         return left
 
