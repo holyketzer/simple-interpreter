@@ -9,11 +9,11 @@ OPEN_PRS, CLOSE_PRS = "(", ")"
 # Grammar
 # expr : product ((PLUS | MINUS) product)*
 # product : number ((MUL | DIV) number)*
-# number : INTEGER | (expr)
+# number : INTEGER | O_PAREN expr C_PAREN
 
 (2 + 2) * 2
 
-class Token(object):
+class Token:
     def __init__(self, type, value):
         # token type: INTEGER, PLUS, or EOF
         self.type = type
@@ -36,18 +36,17 @@ class Token(object):
         return self.__str__()
 
 
-class Interpreter(object):
+class Lexer:
     def __init__(self, text):
         # client string input, e.g. "3+5"
         self.text = text
         # self.pos is an index into self.text
         self.pos = 0
         # current token instance
-        self.current_token = None
         self.current_char = self.text[self.pos]
 
     def error(self):
-        raise Exception('Error parsing input')
+        raise Exception('Invalid character')
 
     def advance(self):
         """Advance the 'pos' pointer and set the 'current_char' variable."""
@@ -111,16 +110,21 @@ class Interpreter(object):
 
     def get_all_tokens(self):
         res = []
+        current_token = self.get_next_token()
 
-        while True:
-            token = self.get_next_token()
-            if token.type == EOF:
-                break
-            else:
-                print(token)
-                res.append(token.value)
+        while current_token.type != EOF:
+            res.append(current_token.value)
+            current_token = self.get_next_token()
 
         return res
+
+class Interpreter:
+    def __init__(self, lexer):
+        self.lexer = lexer
+        self.current_token = self.lexer.get_next_token()
+
+    def error(self):
+        raise Exception('Invalid syntax')
 
     def eat(self, token_type):
         # compare the current token type with the passed token
@@ -128,7 +132,7 @@ class Interpreter(object):
         # and assign the next token to the self.current_token,
         # otherwise raise an exception.
         if self.current_token.type == token_type:
-            self.current_token = self.get_next_token()
+            self.current_token = self.lexer.get_next_token()
         else:
             self.error()
 
@@ -138,19 +142,14 @@ class Interpreter(object):
 
         if token.type == OPEN_PRS:
             self.eat(OPEN_PRS)
-            res = self.expr(False)
-
-            if self.current_token.type == CLOSE_PRS:
-                self.eat(CLOSE_PRS)
-                return res
-            else:
-                self.error()
+            res = self.expr()
+            self.eat(CLOSE_PRS)
+            return res
         else:
             self.eat(INTEGER)
             return token.value
 
     def product(self):
-        # self.current_token = self.get_next_token()
         left = self.number()
 
         while self.current_token.type in (MUL, DIV):
@@ -164,10 +163,7 @@ class Interpreter(object):
 
         return left
 
-    def expr(self, next_token=True):
-        if next_token:
-            self.current_token = self.get_next_token()
-
+    def expr(self):
         left = self.product()
 
         while self.current_token.type in (PLUS, MINUS):
@@ -181,6 +177,14 @@ class Interpreter(object):
 
         return left
 
+    def evaluate(self):
+        res = self.expr()
+
+        if self.current_token.type != EOF:
+            self.error()
+
+        return res
+
 def main():
     while True:
         try:
@@ -191,8 +195,8 @@ def main():
             break
         if not text:
             continue
-        interpreter = Interpreter(text)
-        result = interpreter.expr()
+        interpreter = Interpreter(Lexer(text))
+        result = interpreter.evaluate()
         print(result)
 
 

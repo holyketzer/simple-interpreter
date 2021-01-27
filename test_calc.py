@@ -1,6 +1,6 @@
 import pytest
 
-from calc import Interpreter
+from calc import Lexer, Interpreter
 
 @pytest.mark.parametrize(
     "expression, expected_result",
@@ -10,7 +10,7 @@ from calc import Interpreter
     ]
 )
 def test_lexer(expression, expected_result):
-    res = Interpreter(expression).get_all_tokens()
+    res = Lexer(expression).get_all_tokens()
 
     assert expected_result == res
 
@@ -33,10 +33,17 @@ def test_lexer(expression, expected_result):
     ]
 )
 def test_expressions(expression, expected_result):
-    res = Interpreter(expression).expr()
+    res = Interpreter(Lexer(expression)).evaluate()
 
     assert expected_result == res
 
-def test_invalid_expression():
-    with pytest.raises(Exception):
-        Interpreter("3 +").expr()
+@pytest.mark.parametrize(
+    "expression",
+    [
+       pytest.param("3 + "),
+       pytest.param("10 + 2 * 3 2 * 10 / 4 5 8"),
+    ]
+)
+def test_invalid_expression(expression):
+    with pytest.raises(Exception, match=r"Invalid syntax"):
+        Interpreter(Lexer(expression)).evaluate()
