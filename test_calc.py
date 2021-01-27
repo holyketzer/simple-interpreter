@@ -11,6 +11,7 @@ from calc import Interpreter
         pytest.param(" 44 / 4 ", 11),
         pytest.param(" 2 + 3 + 4 - 5 + 6 ", 10),
         pytest.param(" 777 ", 777),
+        pytest.param("2 + 2 * 2", 8), # wrong!
     ]
 )
 def test_expressions(expression, expected_result):
