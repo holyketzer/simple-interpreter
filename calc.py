@@ -2,9 +2,13 @@
 #
 # EOF (end-of-file) token is used to indicate that
 # there is no more input left for lexical analysis
-PLUS, MINUS, MULTIPLICATION, DIVSION = 'PLUS', 'MINUS', 'MULTIPLICATION', 'DIVSION'
+PLUS, MINUS, MUL, DIV = 'PLUS', 'MINUS', 'MUL', 'DIV'
 INTEGER, EOF = 'INTEGER', 'EOF'
 
+# Grammar
+# expr : factor ((PLUS | MINUS) factor)*
+# factor : number ((MUL | DIV) number)*
+# number : INTEGER
 
 class Token(object):
     def __init__(self, type, value):
@@ -56,7 +60,7 @@ class Interpreter(object):
             self.advance()
 
     def integer(self):
-        """Return a (multidigit) integer consumed from the input."""
+        """Return a (mulidigit) integer consumed from the input."""
         result = ''
 
         while self.current_char.isdigit():
@@ -87,11 +91,11 @@ class Interpreter(object):
 
             if self.current_char == '*':
                 self.advance()
-                return Token(MULTIPLICATION, self.current_char)
+                return Token(MUL, self.current_char)
 
             if self.current_char == '/':
                 self.advance()
-                return Token(DIVSION, self.current_char)
+                return Token(DIV, self.current_char)
 
             self.error()
 
@@ -107,45 +111,42 @@ class Interpreter(object):
         else:
             self.error()
 
-    def term(self):
+    def number(self):
         """Return an INTEGER token value"""
         token = self.current_token
         self.eat(INTEGER)
         return token.value
 
+    def factor(self):
+        # self.current_token = self.get_next_token()
+        left = self.number()
+
+        while self.current_token.type in (MUL, DIV):
+            token = self.current_token
+            self.eat(token.type)
+
+            if token.type == MUL:
+                left = left * self.number()
+            elif token.type == DIV:
+                left = left / self.number()
+
+        return left
+
     def expr(self):
-        """expr -> INTEGER PLUS INTEGER"""
-        # set current token to the first token taken from the input
         self.current_token = self.get_next_token()
 
-        # we expect the current token to be a single-digit integer
-        result = self.term()
+        left = self.factor()
 
-        while self.current_token.type != EOF:
-            # we expect the current token to be either a '+' or '-'
-            op = self.current_token
-            self.eat(op.type)
+        while self.current_token.type in (PLUS, MINUS):
+            token = self.current_token
+            self.eat(token.type)
 
-            # we expect the current token to be a single-digit integer
-            right = self.term()
-            # after the above call the self.current_token is set to
-            # EOF token
+            if token.type == PLUS:
+                left = left + self.factor()
+            elif token.type == MINUS:
+                left = left - self.factor()
 
-            # at this point either the INTEGER PLUS INTEGER or
-            # the INTEGER MINUS INTEGER sequence of tokens
-            # has been successfully found and the method can just
-            # return the result of adding or subtracting two integers,
-            # thus effectively interpreting client input
-            if op.type == MULTIPLICATION:
-                result = result * right
-            elif op.type == DIVSION:
-                result = result / right
-            elif op.type == PLUS:
-                result = result + right
-            elif op.type == MINUS:
-                result = result - right
-
-        return result
+        return left
 
 def main():
     while True:
