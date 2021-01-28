@@ -197,11 +197,15 @@ class NodeVisitor(object):
     def generic_visit(self, node):
         raise Exception('No visit_{} method'.format(type(node).__name__))
 
-
-class Interpreter(NodeVisitor):
+class InterpreterWithParser(NodeVisitor):
     def __init__(self, parser):
         self.parser = parser
 
+    def evaluate(self):
+        root = self.parser.parse()
+        return self.visit(root)
+
+class Interpreter(InterpreterWithParser):
     def visit_OpNode(self, node):
         if node.op.type == PLUS:
             return self.visit(node.left) + self.visit(node.right)
@@ -215,9 +219,19 @@ class Interpreter(NodeVisitor):
     def visit_NumNode(self, node):
         return node.value
 
-    def evaluate(self):
-        root = self.parser.parse()
-        return self.visit(root)
+class ReversePolishNotationTranslator(InterpreterWithParser):
+    def visit_OpNode(self, node):
+        return f"{self.visit(node.left)} {self.visit(node.right)} {node.op.value}"
+
+    def visit_NumNode(self, node):
+        return str(node.value)
+
+class LISPTranslator(InterpreterWithParser):
+    def visit_OpNode(self, node):
+        return f"({node.op.value} {self.visit(node.left)} {self.visit(node.right)})"
+
+    def visit_NumNode(self, node):
+        return str(node.value)
 
 def main():
     while True:

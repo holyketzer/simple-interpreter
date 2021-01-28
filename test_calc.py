@@ -1,6 +1,6 @@
 import pytest
 
-from calc import Lexer, Parser, Interpreter
+from calc import Lexer, Parser, Interpreter, ReversePolishNotationTranslator, LISPTranslator
 
 @pytest.mark.parametrize(
     "expression, expected_result",
@@ -47,3 +47,27 @@ def test_expressions(expression, expected_result):
 def test_invalid_expression(expression):
     with pytest.raises(Exception, match=r"Invalid syntax"):
         Interpreter(Parser(Lexer(expression))).evaluate()
+
+@pytest.mark.parametrize(
+    "expression, expected_result",
+    [
+        pytest.param(" 22 + 11 ", "22 11 +"),
+        pytest.param("(5 + 3) * 12 / 3", "5 3 + 12 * 3 /"),
+    ]
+)
+def test_reverse_polish_notation_translator(expression, expected_result):
+    res = ReversePolishNotationTranslator(Parser(Lexer(expression))).evaluate()
+
+    assert expected_result == res
+
+@pytest.mark.parametrize(
+    "expression, expected_result",
+    [
+        pytest.param(" 22 + 11 ", "(+ 22 11)"),
+        pytest.param("(5 + 3) * 12 / 3", "(/ (* (+ 5 3) 12) 3)"),
+    ]
+)
+def test_lisp_translator(expression, expected_result):
+    res = LISPTranslator(Parser(Lexer(expression))).evaluate()
+
+    assert expected_result == res
