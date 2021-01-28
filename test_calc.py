@@ -30,6 +30,7 @@ def test_lexer(expression, expected_result):
         pytest.param("(2 + 2) * 2", 8),
         pytest.param("2 * (2 + 2)", 8),
         pytest.param("7 + 3 * (10 / (12 / (3 + 1) - 1))", 22),
+        pytest.param("+7 - -3", 10),
     ]
 )
 def test_expressions(expression, expected_result):

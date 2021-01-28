@@ -9,7 +9,7 @@ OPEN_PRS, CLOSE_PRS = "(", ")"
 # Grammar
 # expr : product ((PLUS | MINUS) product)*
 # product : number ((MUL | DIV) number)*
-# number : INTEGER | O_PAREN expr C_PAREN
+# number : (PLUS | MINUS) number | INTEGER | LPAREN expr RPAREN
 
 class Token:
     def __init__(self, type, value):
@@ -118,16 +118,23 @@ class Lexer:
 class BaseNode(object):
     pass
 
-class OpNode(BaseNode):
+class NumNode(BaseNode):
+    def __init__(self, token):
+        self.token = token
+        self.value = token.value
+
+# class
+
+class BinOpNode(BaseNode):
     def __init__(self, left, op, right):
         self.left = left
         self.token = self.op = op
         self.right = right
 
-class NumNode(BaseNode):
-    def __init__(self, token):
-        self.token = token
-        self.value = token.value
+class UnaryOpNode(BaseNode):
+    def __init__(self, op, child):
+        self.token = self.op = op
+        self.child = child
 
 class Parser:
     def __init__(self, lexer):
@@ -156,6 +163,9 @@ class Parser:
             node = self.expr()
             self.eat(CLOSE_PRS)
             return node
+        elif token.type in (PLUS, MINUS):
+            self.eat(token.type)
+            return UnaryOpNode(token, self.number())
         else:
             self.eat(INTEGER)
             return NumNode(token)
@@ -166,7 +176,7 @@ class Parser:
         while self.current_token.type in (MUL, DIV):
             token = self.current_token
             self.eat(token.type)
-            left = OpNode(left, token, self.number())
+            left = BinOpNode(left, token, self.number())
 
         return left
 
@@ -176,7 +186,7 @@ class Parser:
         while self.current_token.type in (PLUS, MINUS):
             token = self.current_token
             self.eat(token.type)
-            left = OpNode(left, token, self.product())
+            left = BinOpNode(left, token, self.product())
 
         return left
 
@@ -206,7 +216,7 @@ class InterpreterWithParser(NodeVisitor):
         return self.visit(root)
 
 class Interpreter(InterpreterWithParser):
-    def visit_OpNode(self, node):
+    def visit_BinOpNode(self, node):
         if node.op.type == PLUS:
             return self.visit(node.left) + self.visit(node.right)
         elif node.op.type == MINUS:
@@ -216,18 +226,24 @@ class Interpreter(InterpreterWithParser):
         elif node.op.type == DIV:
             return self.visit(node.left) / self.visit(node.right)
 
+    def visit_UnaryOpNode(self, node):
+        if node.op.type == MINUS:
+            return -self.visit(node.child)
+        elif node.op.type == PLUS:
+            return +self.visit(node.child)
+
     def visit_NumNode(self, node):
         return node.value
 
 class ReversePolishNotationTranslator(InterpreterWithParser):
-    def visit_OpNode(self, node):
+    def visit_BinOpNode(self, node):
         return f"{self.visit(node.left)} {self.visit(node.right)} {node.op.value}"
 
     def visit_NumNode(self, node):
         return str(node.value)
 
 class LISPTranslator(InterpreterWithParser):
-    def visit_OpNode(self, node):
+    def visit_BinOpNode(self, node):
         return f"({node.op.value} {self.visit(node.left)} {self.visit(node.right)})"
 
     def visit_NumNode(self, node):
