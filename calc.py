@@ -11,8 +11,6 @@ OPEN_PRS, CLOSE_PRS = "(", ")"
 # product : number ((MUL | DIV) number)*
 # number : INTEGER | O_PAREN expr C_PAREN
 
-(2 + 2) * 2
-
 class Token:
     def __init__(self, type, value):
         # token type: INTEGER, PLUS, or EOF
@@ -34,7 +32,6 @@ class Token:
 
     def __repr__(self):
         return self.__str__()
-
 
 class Lexer:
     def __init__(self, text):
@@ -118,7 +115,21 @@ class Lexer:
 
         return res
 
-class Interpreter:
+class BaseNode(object):
+    pass
+
+class OpNode(BaseNode):
+    def __init__(self, left, op, right):
+        self.left = left
+        self.token = self.op = op
+        self.right = right
+
+class NumNode(BaseNode):
+    def __init__(self, token):
+        self.token = token
+        self.value = token.value
+
+class Parser:
     def __init__(self, lexer):
         self.lexer = lexer
         self.current_token = self.lexer.get_next_token()
@@ -142,12 +153,12 @@ class Interpreter:
 
         if token.type == OPEN_PRS:
             self.eat(OPEN_PRS)
-            res = self.expr()
+            node = self.expr()
             self.eat(CLOSE_PRS)
-            return res
+            return node
         else:
             self.eat(INTEGER)
-            return token.value
+            return NumNode(token)
 
     def product(self):
         left = self.number()
@@ -155,11 +166,7 @@ class Interpreter:
         while self.current_token.type in (MUL, DIV):
             token = self.current_token
             self.eat(token.type)
-
-            if token.type == MUL:
-                left = left * self.number()
-            elif token.type == DIV:
-                left = left / self.number()
+            left = OpNode(left, token, self.number())
 
         return left
 
@@ -169,21 +176,48 @@ class Interpreter:
         while self.current_token.type in (PLUS, MINUS):
             token = self.current_token
             self.eat(token.type)
-
-            if token.type == PLUS:
-                left = left + self.product()
-            elif token.type == MINUS:
-                left = left - self.product()
+            left = OpNode(left, token, self.product())
 
         return left
 
-    def evaluate(self):
-        res = self.expr()
+    def parse(self):
+        root = self.expr()
 
         if self.current_token.type != EOF:
             self.error()
 
-        return res
+        return root
+
+class NodeVisitor(object):
+    def visit(self, node):
+        method_name = 'visit_' + type(node).__name__
+        visitor = getattr(self, method_name, self.generic_visit)
+        return visitor(node)
+
+    def generic_visit(self, node):
+        raise Exception('No visit_{} method'.format(type(node).__name__))
+
+
+class Interpreter(NodeVisitor):
+    def __init__(self, parser):
+        self.parser = parser
+
+    def visit_OpNode(self, node):
+        if node.op.type == PLUS:
+            return self.visit(node.left) + self.visit(node.right)
+        elif node.op.type == MINUS:
+            return self.visit(node.left) - self.visit(node.right)
+        elif node.op.type == MUL:
+            return self.visit(node.left) * self.visit(node.right)
+        elif node.op.type == DIV:
+            return self.visit(node.left) / self.visit(node.right)
+
+    def visit_NumNode(self, node):
+        return node.value
+
+    def evaluate(self):
+        root = self.parser.parse()
+        return self.visit(root)
 
 def main():
     while True:

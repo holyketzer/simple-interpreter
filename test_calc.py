@@ -1,6 +1,6 @@
 import pytest
 
-from calc import Lexer, Interpreter
+from calc import Lexer, Parser, Interpreter
 
 @pytest.mark.parametrize(
     "expression, expected_result",
@@ -33,7 +33,7 @@ def test_lexer(expression, expected_result):
     ]
 )
 def test_expressions(expression, expected_result):
-    res = Interpreter(Lexer(expression)).evaluate()
+    res = Interpreter(Parser(Lexer(expression))).evaluate()
 
     assert expected_result == res
 
@@ -46,4 +46,4 @@ def test_expressions(expression, expected_result):
 )
 def test_invalid_expression(expression):
     with pytest.raises(Exception, match=r"Invalid syntax"):
-        Interpreter(Lexer(expression)).evaluate()
+        Interpreter(Parser(Lexer(expression))).evaluate()
