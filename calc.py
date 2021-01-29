@@ -2,11 +2,16 @@
 #
 # EOF (end-of-file) token is used to indicate that
 # there is no more input left for lexical analysis
-PLUS, MINUS, MUL, DIV, INT_DIV = 'PLUS', 'MINUS', 'MUL', 'DIV', 'INT_DIV'
-INTEGER, EOF = 'INTEGER', 'EOF'
+PLUS, MINUS, MUL, REAL_DIV, INT_DIV = "PLUS", "MINUS", "MUL", "REAL_DIV", "INT_DIV"
+INTEGER, REAL, EOF = "integer", "real", "EOF"
+INTEGER_CONST, REAL_CONST = "INTEGER_CONST", "REAL_CONST"
 OPEN_PRS, CLOSE_PRS = "(", ")"
+LCURLY, RCURLY = "{", "}"
 UNDERSCORE = "_"
-BEGIN, END, DOT, SEMI, ASSIGN, ID = "begin", "end", "DOT", "SEMI", "ASSIGN", "ID"
+COLON = ":"
+COMMA = ","
+PROGRAM, BEGIN, VAR, END, DOT, SEMI, ASSIGN, ID = "program", "begin", "var", "end", "DOT", "SEMI", "ASSIGN", "ID"
+COMMENT = "COMMENT"
 
 # Grammar
 # expr : product ((PLUS | MINUS) product)*
@@ -14,17 +19,21 @@ BEGIN, END, DOT, SEMI, ASSIGN, ID = "begin", "end", "DOT", "SEMI", "ASSIGN", "ID
 # number : (PLUS | MINUS) number | INTEGER | LPAREN expr RPAREN
 
 # Pascal grammar
-# program : compound_statement DOT
+# ==============
+# program : PROGRAM variable SEMI block DOT
+# block : declarations compound_statement
+# declarations : VAR (variable_declaration SEMI)+ | empty
+# variable_declaration : variable (COMMA variable)* COLON type_spec
+# type_spec : INTEGER | REAL
 # compound_statement : BEGIN statement_list end
 # statement_list : statement | statement SEMI statement_list
 # statement : compound_statement | assignment_statement | empty
 # assignment_statement : variable ASSIGN expr
 # expr : product ((PLUS | MINUS) product)*
-# product : factor ((MUL | DIV) factor)*
-# factor : PLUS factor | MINUS factor | INTEGER | variable | LPAREN expr RPAREN
+# product : factor ((MUL | INT_DIV | FLOAT_DIV) factor)*
+# factor : PLUS factor | MINUS factor | INTEGER_CONST | REAL_CONST | variable | LPAREN expr RPAREN
 # variable : ID
 # empty :
-
 
 class Token:
     def __init__(self, type, value):
@@ -75,15 +84,23 @@ class Lexer:
         while self.current_char.isspace():
             self.advance()
 
-    def integer(self):
+    def skip_comment(self):
+        while self.current_char != RCURLY:
+            self.advance()
+        self.advance()  # the closing curly brace
+
+    def number(self):
         """Return a (mulidigit) integer consumed from the input."""
         result = ''
 
-        while self.current_char.isdigit():
+        while self.current_char.isdigit() or self.current_char == ".":
             result += self.current_char
             self.advance()
 
-        return int(result)
+        if "." in result:
+            return Token(REAL_CONST, float(result))
+        else:
+            return Token(INTEGER_CONST, int(result))
 
     def is_name_begin(self, current_char):
         return current_char.isalpha() or current_char == UNDERSCORE
@@ -94,14 +111,24 @@ class Lexer:
             result += self.current_char
             self.advance()
 
-        result = result.lower()
+        result = result.lower().strip()
 
-        if result in (BEGIN, END):
+        if result in (BEGIN, END, PROGRAM, VAR, INTEGER, REAL):
             return Token(result, result)
         elif result == 'div':
             return Token(INT_DIV, 'div')
         else:
             return Token(ID, result)
+
+    def comment(self):
+        result = ''
+        while self.current_char != RCURLY:
+            result += self.current_char
+            self.advance()
+
+        result += self.current_char
+
+        return Token(COMMENT, result.strip())
 
     def get_next_token(self):
         """Lexical analyzer (also known as scanner or tokenizer)
@@ -113,10 +140,15 @@ class Lexer:
 
         while self.current_char:
             if self.current_char.isdigit():
-                return Token(INTEGER, self.integer())
+                return self.number()
 
             if self.is_name_begin(self.current_char):
                 return self.id()
+
+            if self.current_char == LCURLY:
+                self.skip_comment()
+                self.skip_whitespaces()
+                continue
 
             if self.current_char == '+':
                 self.advance()
@@ -132,7 +164,7 @@ class Lexer:
 
             if self.current_char == '/':
                 self.advance()
-                return Token(DIV, "/")
+                return Token(REAL_DIV, "/")
 
             if self.current_char in (OPEN_PRS, CLOSE_PRS):
                 current_char = self.current_char
@@ -143,6 +175,10 @@ class Lexer:
                 self.advance()
                 return Token(DOT, ".")
 
+            if self.current_char == ",":
+                self.advance()
+                return Token(COMMA, ",")
+
             if self.current_char == ";":
                 self.advance()
                 return Token(SEMI, ";")
@@ -152,6 +188,9 @@ class Lexer:
                     self.advance()
                     self.advance()
                     return Token(ASSIGN, ":=")
+                else:
+                    self.advance()
+                    return Token(COLON, ":")
 
             self.error()
 
@@ -185,6 +224,22 @@ class NumNode(BaseNode):
 class VarNode(NumNode):
     pass
 
+class VarDeclNode(BaseNode):
+    def __init__(self, var_node, type_node):
+        self.var_node = var_node
+        self.type_node = type_node
+
+    def __str__(self):
+        return f"var {self.var_node} : {self.type_node};"
+
+class TypeNode(BaseNode):
+    def __init__(self, token):
+        self.token = token
+        self.name = token.value
+
+    def __str__(self):
+        return self.name
+
 class AssignNode(BaseNode):
     def __init__(self, var_node, expr_node):
         self.var_node = var_node
@@ -217,6 +272,23 @@ class CompoundNode(BaseNode):
     def __str__(self):
         return "; ".join(map(str, self.children))
 
+class BlockNode(BaseNode):
+    def __init__(self, declaration_nodes, compound_node):
+        self.declaration_nodes = declaration_nodes
+        self.compound_node = compound_node
+
+    def __str__(self):
+        declarations = " ".join(map(str, self.declaration_nodes))
+        return f"{declarations} {self.compound_node}"
+
+class ProgramNode(BaseNode):
+    def __init__(self, name, block_node):
+        self.name = name
+        self.block_node = block_node
+
+    def __str__(self):
+        return f"PROGRAM {self.name}; {self.block_node}."
+
 class Parser:
     def __init__(self, lexer):
         self.lexer = lexer
@@ -236,9 +308,49 @@ class Parser:
             self.error()
 
     def program(self):
-        node = self.compound_statement()
+        self.eat(PROGRAM)
+        var_node = self.variable()
+        self.eat(SEMI)
+        block_node = self.block()
         self.eat(DOT)
-        return node
+        return ProgramNode(var_node.value, block_node)
+
+    def block(self):
+        declaration_nodes = self.declarations()
+        compound_node = self.compound_statement()
+        return BlockNode(declaration_nodes, compound_node)
+
+    def declarations(self):
+        res = []
+        if self.current_token.type == VAR:
+            self.eat(VAR)
+
+            while self.current_token.type == ID:
+                res += self.variable_declaration()
+                self.eat(SEMI)
+
+        return res
+
+    def variable_declaration(self):
+        var_nodes = [self.variable()]
+
+        while self.current_token.type == COMMA:
+            self.eat(COMMA)
+            var_nodes.append(self.variable())
+
+        self.eat(COLON)
+        type_node = self.type_spec()
+
+        return list(map(lambda var_node: VarDeclNode(var_node, type_node), var_nodes))
+
+    def type_spec(self):
+        token = self.current_token
+
+        if token.type in (INTEGER, REAL):
+            self.eat(token.type)
+            return TypeNode(token)
+        else:
+            self.error()
 
     def compound_statement(self):
         self.eat(BEGIN)
@@ -282,7 +394,7 @@ class Parser:
     def product(self):
         left = self.factor()
 
-        while self.current_token.type in (MUL, DIV, INT_DIV):
+        while self.current_token.type in (MUL, REAL_DIV, INT_DIV):
             token = self.current_token
             self.eat(token.type)
             left = BinOpNode(left, token, self.factor())
@@ -303,8 +415,11 @@ class Parser:
             return UnaryOpNode(token, self.factor())
         elif token.type == ID:
             return self.variable()
+        elif token.type == REAL_CONST:
+            self.eat(REAL_CONST)
+            return NumNode(token)
         else:
-            self.eat(INTEGER)
+            self.eat(INTEGER_CONST)
             return NumNode(token)
 
     def variable(self):
@@ -346,7 +461,7 @@ class Interpreter(InterpreterWithParser):
             return self.visit(node.left) - self.visit(node.right)
         elif node.op.type == MUL:
             return self.visit(node.left) * self.visit(node.right)
-        elif node.op.type == DIV:
+        elif node.op.type == REAL_DIV:
             return self.visit(node.left) / self.visit(node.right)
         elif node.op.type == INT_DIV:
             return self.visit(node.left) // self.visit(node.right)
@@ -374,9 +489,21 @@ class Interpreter(InterpreterWithParser):
     def visit_AssignNode(self, node):
         self.global_scope[node.var_node.value] = self.visit(node.expr_node)
 
+    def visit_VarDeclNode(self, node):
+        self.global_scope[node.var_node.value] = 0
+
     def visit_CompoundNode(self, node):
         for child in node.children:
             self.visit(child)
+
+    def visit_BlockNode(self, node):
+        for declaration_node in node.declaration_nodes:
+            self.visit(declaration_node)
+
+        self.visit(node.compound_node)
+
+    def visit_ProgramNode(self, node):
+        self.visit(node.block_node)
 
 class ReversePolishNotationTranslator(InterpreterWithParser):
     def visit_BinOpNode(self, node):

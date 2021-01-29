@@ -7,7 +7,27 @@ from calc import Lexer, Parser, Interpreter, ReversePolishNotationTranslator, LI
     [
         pytest.param(" 22 + 11 ", [22, "+", 11]),
         pytest.param("(2 + 2) * 2", ["(", 2, "+", 2, ")", "*", 2]),
-        pytest.param("BEGIN a := 2; END.", ["begin", "a", ":=", 2, ";", "end", "."])
+        pytest.param("BEGIN a := 2; END.", ["begin", "a", ":=", 2, ";", "end", "."]),
+        pytest.param('''
+            PROGRAM Part10;
+            VAR
+               number     : INTEGER;
+               y          : REAL;
+            BEGIN {Part10}
+               BEGIN
+                  number := 2;
+               END;
+               y := 20 / 7 + 3.14;
+               { writeln('y = ', y); }
+               { writeln('number = ', number); }
+            END.  {Part10}
+            ''',
+            [
+                "program", "part10", ";", "var", "number", ":", "integer", ";", "y", ":", "real", ";",
+                "begin", "begin", "number", ":=", 2, ";", "end", ";",
+                "y", ":=", 20, "/", 7, "+", 3.14, ";", "end", ".",
+            ]
+        ),
     ]
 )
 def test_lexer(expression, expected_result):
@@ -18,9 +38,10 @@ def test_lexer(expression, expected_result):
 @pytest.mark.parametrize(
     "expression, expected_result",
     [
-        pytest.param("BEGIN a := 2; b := a * 2 END.", "a := 2; b := a * 2"),
+        pytest.param("PROGRAM test; BEGIN a := 2; b := a * 2 END.", "PROGRAM test;  a := 2; b := a * 2."),
         pytest.param(
             '''
+            PROGRAM test;
             BEGIN
                 BEGIN
                     number := 2;
@@ -31,13 +52,12 @@ def test_lexer(expression, expected_result):
                 x := 11;
             END.
             ''',
-            "number := 2; a := number; b := 10 * a + 10 * number / 4; c := a - -b; x := 11; "
+            "PROGRAM test;  number := 2; a := number; b := 10 * a + 10 * number / 4; c := a - -b; x := 11; ."
         )
     ]
 )
 def test_parser(expression, expected_result):
     res = Parser(Lexer(expression)).parse()
-    print(Lexer(expression).get_all_tokens())
 
     assert str(res) == expected_result
 
@@ -62,7 +82,7 @@ def test_parser(expression, expected_result):
     ]
 )
 def test_expressions(expression, expected_result):
-    interpreter = Interpreter(Parser(Lexer(f"BEGIN a := {expression} END.")))
+    interpreter = Interpreter(Parser(Lexer(f"PROGRAM test; BEGIN a := {expression} END.")))
     interpreter.evaluate()
 
     assert expected_result == interpreter.global_scope['a']
@@ -76,20 +96,34 @@ def test_expressions(expression, expected_result):
 )
 def test_invalid_expression(expression):
     with pytest.raises(Exception, match=r"Invalid syntax"):
-        Interpreter(Parser(Lexer(f"BEGIN a := {expression} END."))).evaluate()
+        Interpreter(Parser(Lexer(f"PROGRAM test; BEGIN a := {expression} END."))).evaluate()
 
 def test_parser_case_insensitive():
     sources = '''
-        BEGIN
-            BEGIN
-                number := 2;
-                a := NumBer;
-                _B := 10 * a + 10 * NUMBER / 4;
-                c := a - - _b
-            end;
-            x := 11;
-        END.
-    '''
+        PROGRAM Part10;
+        VAR
+           number     : INTEGER;
+           a, _b, c, x : INTEGER;
+           y          : REAL;
+
+        beGin {Part10}
+           BEGIN
+              number := 2;
+              A := number;
+              _b := 10 * a + 10 * number DIV 4;
+              C := a - - _b
+           END;
+           x := 11;
+           y := 20 / 7 + 3.14;
+           { writeln('a = ', a); }
+           { writeln('b = ', _b); }
+           { writeln('c = ', c); }
+           { writeln('number = ', number); }
+           { writeln('x = ', x); }
+           { writeln('y = ', y); }
+        End.  {Part10}
+
+        '''
 
     interpreter = Interpreter(Parser(Lexer(sources)))
     interpreter.evaluate()
@@ -98,6 +132,7 @@ def test_parser_case_insensitive():
     assert interpreter.global_scope['_b'] == 25
     assert interpreter.global_scope['c'] == 27
     assert interpreter.global_scope['x'] == 11
+    assert interpreter.global_scope['y'] == 20 / 7 + 3.14
 
 # @pytest.mark.parametrize(
 #     "expression, expected_result",
