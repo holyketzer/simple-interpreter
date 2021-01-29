@@ -5,11 +5,25 @@
 PLUS, MINUS, MUL, DIV = 'PLUS', 'MINUS', 'MUL', 'DIV'
 INTEGER, EOF = 'INTEGER', 'EOF'
 OPEN_PRS, CLOSE_PRS = "(", ")"
+BEGIN, END, DOT, SEMI, ASSIGN, ID = "BEGIN", "END", "DOT", "SEMI", "ASSIGN", "ID"
 
 # Grammar
 # expr : product ((PLUS | MINUS) product)*
 # product : number ((MUL | DIV) number)*
 # number : (PLUS | MINUS) number | INTEGER | LPAREN expr RPAREN
+
+# Pascal grammar
+# program : compound_statement DOT
+# compound_statement : BEGIN statement_list END
+# statement_list : statement | statement SEMI statement_list
+# statement : compound_statement | assignment_statement | empty
+# assignment_statement : variable ASSIGN expr
+# expr : product ((PLUS | MINUS) product)*
+# product : factor ((MUL | DIV) factor)*
+# factor : PLUS factor | MINUS factor | INTEGER | variable | LPAREN expr RPAREN
+# variable : ID
+# empty :
+
 
 class Token:
     def __init__(self, type, value):
@@ -43,16 +57,18 @@ class Lexer:
         self.current_char = self.text[self.pos]
 
     def error(self):
-        raise Exception('Invalid character')
+        raise Exception(f"Invalid character '{self.current_char}'")
 
     def advance(self):
         """Advance the 'pos' pointer and set the 'current_char' variable."""
         self.pos += 1
+        self.current_char = self.peek(delta=0)
 
-        if self.pos < len(self.text):
-            self.current_char = self.text[self.pos]
+    def peek(self, delta=1):
+        if self.pos + delta < len(self.text):
+            return self.text[self.pos + delta]
         else:
-            self.current_char = ''  # Indicates end of input
+            return ''  # Indicates end of input
 
     def skip_whitespaces(self):
         while self.current_char.isspace():
@@ -68,6 +84,17 @@ class Lexer:
 
         return int(result)
 
+    def id(self):
+        result = ''
+        while self.current_char.isdigit() or self.current_char.isalpha():
+            result += self.current_char
+            self.advance()
+
+        if result in (BEGIN, END):
+            return Token(result, result)
+        else:
+            return Token(ID, result)
+
     def get_next_token(self):
         """Lexical analyzer (also known as scanner or tokenizer)
 
@@ -79,6 +106,9 @@ class Lexer:
         while self.current_char:
             if self.current_char.isdigit():
                 return Token(INTEGER, self.integer())
+
+            if self.current_char.isalpha():
+                return self.id()
 
             if self.current_char == '+':
                 self.advance()
@@ -101,6 +131,20 @@ class Lexer:
                 self.advance()
                 return Token(current_char, current_char)
 
+            if self.current_char == ".":
+                self.advance()
+                return Token(DOT, ".")
+
+            if self.current_char == ";":
+                self.advance()
+                return Token(SEMI, ";")
+
+            if self.current_char == ":":
+                if self.peek() == "=":
+                    self.advance()
+                    self.advance()
+                    return Token(ASSIGN, ":=")
+
             self.error()
 
         return Token(EOF, None)
@@ -118,12 +162,28 @@ class Lexer:
 class BaseNode(object):
     pass
 
+class NoOpNode(BaseNode):
+    def __str__(self):
+        return ""
+
 class NumNode(BaseNode):
     def __init__(self, token):
         self.token = token
         self.value = token.value
 
-# class
+    def __str__(self):
+        return str(self.value)
+
+class VarNode(NumNode):
+    pass
+
+class AssignNode(BaseNode):
+    def __init__(self, var_node, expr_node):
+        self.var_node = var_node
+        self.expr_node = expr_node
+
+    def __str__(self):
+        return f"{self.var_node} := {self.expr_node}"
 
 class BinOpNode(BaseNode):
     def __init__(self, left, op, right):
@@ -131,10 +191,23 @@ class BinOpNode(BaseNode):
         self.token = self.op = op
         self.right = right
 
+    def __str__(self):
+        return f"{self.left} {self.op.value} {self.right}"
+
 class UnaryOpNode(BaseNode):
     def __init__(self, op, child):
         self.token = self.op = op
         self.child = child
+
+    def __str__(self):
+        return f"{self.op.value}{self.child}"
+
+class CompoundNode(BaseNode):
+    def __init__(self, children):
+        self.children = children
+
+    def __str__(self):
+        return "; ".join(map(str, self.children))
 
 class Parser:
     def __init__(self, lexer):
@@ -154,31 +227,39 @@ class Parser:
         else:
             self.error()
 
-    def number(self):
-        """Return an INTEGER token value"""
-        token = self.current_token
+    def program(self):
+        node = self.compound_statement()
+        self.eat(DOT)
+        return node
 
-        if token.type == OPEN_PRS:
-            self.eat(OPEN_PRS)
-            node = self.expr()
-            self.eat(CLOSE_PRS)
-            return node
-        elif token.type in (PLUS, MINUS):
-            self.eat(token.type)
-            return UnaryOpNode(token, self.number())
+    def compound_statement(self):
+        self.eat(BEGIN)
+        nodes = self.statement_list()
+        self.eat(END)
+        return CompoundNode(nodes)
+
+    def statement_list(self):
+        nodes_list = [self.statement()]
+
+        while self.current_token.type == SEMI:
+            self.eat(SEMI)
+            nodes_list += self.statement_list()
+
+        return nodes_list
+
+    def statement(self):
+        if self.current_token.type == BEGIN:
+            return self.compound_statement()
+        elif self.current_token.type == ID:
+            return self.assignment_statement()
         else:
-            self.eat(INTEGER)
-            return NumNode(token)
+            return NoOpNode()
 
-    def product(self):
-        left = self.number()
-
-        while self.current_token.type in (MUL, DIV):
-            token = self.current_token
-            self.eat(token.type)
-            left = BinOpNode(left, token, self.number())
-
-        return left
+    def assignment_statement(self):
+        var_node = self.variable()
+        self.eat(ASSIGN)
+        expr_node = self.expr()
+        return AssignNode(var_node, expr_node)
 
     def expr(self):
         left = self.product()
@@ -190,8 +271,41 @@ class Parser:
 
         return left
 
+    def product(self):
+        left = self.factor()
+
+        while self.current_token.type in (MUL, DIV):
+            token = self.current_token
+            self.eat(token.type)
+            left = BinOpNode(left, token, self.factor())
+
+        return left
+
+    def factor(self):
+        """Return an INTEGER token value"""
+        token = self.current_token
+
+        if token.type == OPEN_PRS:
+            self.eat(OPEN_PRS)
+            node = self.expr()
+            self.eat(CLOSE_PRS)
+            return node
+        elif token.type in (PLUS, MINUS):
+            self.eat(token.type)
+            return UnaryOpNode(token, self.factor())
+        elif token.type == ID:
+            return self.variable()
+        else:
+            self.eat(INTEGER)
+            return NumNode(token)
+
+    def variable(self):
+        var_token = self.current_token
+        self.eat(ID)
+        return VarNode(var_token)
+
     def parse(self):
-        root = self.expr()
+        root = self.program()
 
         if self.current_token.type != EOF:
             self.error()
@@ -210,6 +324,7 @@ class NodeVisitor(object):
 class InterpreterWithParser(NodeVisitor):
     def __init__(self, parser):
         self.parser = parser
+        self.global_scope = {}
 
     def evaluate(self):
         root = self.parser.parse()
@@ -234,6 +349,22 @@ class Interpreter(InterpreterWithParser):
 
     def visit_NumNode(self, node):
         return node.value
+
+    def visit_VarNode(self, node):
+        if node.value in self.global_scope:
+            return self.global_scope[node.value]
+        else:
+            raise NameError(node.value)
+
+    def visit_NoOpNode(self, node):
+        pass
+
+    def visit_AssignNode(self, node):
+        self.global_scope[node.var_node.value] = self.visit(node.expr_node)
+
+    def visit_CompoundNode(self, node):
+        for child in node.children:
+            self.visit(child)
 
 class ReversePolishNotationTranslator(InterpreterWithParser):
     def visit_BinOpNode(self, node):
