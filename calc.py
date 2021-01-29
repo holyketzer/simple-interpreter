@@ -2,19 +2,20 @@
 #
 # EOF (end-of-file) token is used to indicate that
 # there is no more input left for lexical analysis
-PLUS, MINUS, MUL, DIV = 'PLUS', 'MINUS', 'MUL', 'DIV'
+PLUS, MINUS, MUL, DIV, INT_DIV = 'PLUS', 'MINUS', 'MUL', 'DIV', 'INT_DIV'
 INTEGER, EOF = 'INTEGER', 'EOF'
 OPEN_PRS, CLOSE_PRS = "(", ")"
-BEGIN, END, DOT, SEMI, ASSIGN, ID = "BEGIN", "END", "DOT", "SEMI", "ASSIGN", "ID"
+UNDERSCORE = "_"
+BEGIN, END, DOT, SEMI, ASSIGN, ID = "begin", "end", "DOT", "SEMI", "ASSIGN", "ID"
 
 # Grammar
 # expr : product ((PLUS | MINUS) product)*
-# product : number ((MUL | DIV) number)*
+# product : number ((MUL | DIV | INT_DIV) number)*
 # number : (PLUS | MINUS) number | INTEGER | LPAREN expr RPAREN
 
 # Pascal grammar
 # program : compound_statement DOT
-# compound_statement : BEGIN statement_list END
+# compound_statement : BEGIN statement_list end
 # statement_list : statement | statement SEMI statement_list
 # statement : compound_statement | assignment_statement | empty
 # assignment_statement : variable ASSIGN expr
@@ -84,14 +85,21 @@ class Lexer:
 
         return int(result)
 
+    def is_name_begin(self, current_char):
+        return current_char.isalpha() or current_char == UNDERSCORE
+
     def id(self):
         result = ''
-        while self.current_char.isdigit() or self.current_char.isalpha():
+        while self.current_char.isdigit() or self.is_name_begin(self.current_char):
             result += self.current_char
             self.advance()
 
+        result = result.lower()
+
         if result in (BEGIN, END):
             return Token(result, result)
+        elif result == 'div':
+            return Token(INT_DIV, 'div')
         else:
             return Token(ID, result)
 
@@ -107,7 +115,7 @@ class Lexer:
             if self.current_char.isdigit():
                 return Token(INTEGER, self.integer())
 
-            if self.current_char.isalpha():
+            if self.is_name_begin(self.current_char):
                 return self.id()
 
             if self.current_char == '+':
@@ -215,7 +223,7 @@ class Parser:
         self.current_token = self.lexer.get_next_token()
 
     def error(self):
-        raise Exception('Invalid syntax')
+        raise Exception(f'Invalid syntax token: {self.current_token}')
 
     def eat(self, token_type):
         # compare the current token type with the passed token
@@ -274,7 +282,7 @@ class Parser:
     def product(self):
         left = self.factor()
 
-        while self.current_token.type in (MUL, DIV):
+        while self.current_token.type in (MUL, DIV, INT_DIV):
             token = self.current_token
             self.eat(token.type)
             left = BinOpNode(left, token, self.factor())
@@ -340,6 +348,10 @@ class Interpreter(InterpreterWithParser):
             return self.visit(node.left) * self.visit(node.right)
         elif node.op.type == DIV:
             return self.visit(node.left) / self.visit(node.right)
+        elif node.op.type == INT_DIV:
+            return self.visit(node.left) // self.visit(node.right)
+        else:
+            raise NameError(f"unsupported binary op {node.op}")
 
     def visit_UnaryOpNode(self, node):
         if node.op.type == MINUS:

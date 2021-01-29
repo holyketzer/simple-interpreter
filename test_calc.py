@@ -7,7 +7,7 @@ from calc import Lexer, Parser, Interpreter, ReversePolishNotationTranslator, LI
     [
         pytest.param(" 22 + 11 ", [22, "+", 11]),
         pytest.param("(2 + 2) * 2", ["(", 2, "+", 2, ")", "*", 2]),
-        pytest.param("BEGIN a := 2; END.", ["BEGIN", "a", ":=", 2, ";", "END", "."])
+        pytest.param("BEGIN a := 2; END.", ["begin", "a", ":=", 2, ";", "end", "."])
     ]
 )
 def test_lexer(expression, expected_result):
@@ -58,6 +58,7 @@ def test_parser(expression, expected_result):
         pytest.param("2 * (2 + 2)", 8),
         pytest.param("7 + 3 * (10 / (12 / (3 + 1) - 1))", 22),
         pytest.param("+7 - -3", 10),
+        pytest.param("9 div 2", 4),
     ]
 )
 def test_expressions(expression, expected_result):
@@ -76,6 +77,27 @@ def test_expressions(expression, expected_result):
 def test_invalid_expression(expression):
     with pytest.raises(Exception, match=r"Invalid syntax"):
         Interpreter(Parser(Lexer(f"BEGIN a := {expression} END."))).evaluate()
+
+def test_parser_case_insensitive():
+    sources = '''
+        BEGIN
+            BEGIN
+                number := 2;
+                a := NumBer;
+                _B := 10 * a + 10 * NUMBER / 4;
+                c := a - - _b
+            end;
+            x := 11;
+        END.
+    '''
+
+    interpreter = Interpreter(Parser(Lexer(sources)))
+    interpreter.evaluate()
+
+    assert interpreter.global_scope['a'] == 2
+    assert interpreter.global_scope['_b'] == 25
+    assert interpreter.global_scope['c'] == 27
+    assert interpreter.global_scope['x'] == 11
 
 # @pytest.mark.parametrize(
 #     "expression, expected_result",
