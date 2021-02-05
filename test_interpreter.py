@@ -14,6 +14,11 @@ from interpreter import SymbolTableBuilder
             VAR
                number     : INTEGER;
                y          : REAL;
+            PROCEDURE P1;
+                VAR A : REAL;
+            BEGIN {P1}
+                a := 1
+            END;  {P1}
             BEGIN {Part10}
                BEGIN
                   number := 2;
@@ -25,6 +30,7 @@ from interpreter import SymbolTableBuilder
             ''',
             [
                 "program", "part10", ";", "var", "number", ":", "integer", ";", "y", ":", "real", ";",
+                "procedure", "p1", ";", "var", "a", ":", "real", ";", "begin", "a", ":=", 1, "end", ";",
                 "begin", "begin", "number", ":=", 2, ";", "end", ";",
                 "y", ":=", 20, "/", 7, "+", 3.14, ";", "end", ".",
             ]
@@ -104,10 +110,17 @@ def test_invalid_expression(expression):
 def test_parser_case_insensitive():
     sources = '''
         PROGRAM Part10;
+
         VAR
            number     : INTEGER;
            a, _b, c, x : INTEGER;
            y          : REAL;
+
+        PROCEDURE P1;
+            VAR A : REAL;
+        BEGIN {P1}
+            a := 1
+        END;  {P1}
 
         beGin {Part10}
            BEGIN
@@ -128,7 +141,10 @@ def test_parser_case_insensitive():
 
         '''
 
-    interpreter = Interpreter(Parser(Lexer(sources)).parse())
+    tree = Parser(Lexer(sources)).parse()
+    SymbolTableBuilder().visit(tree)
+
+    interpreter = Interpreter(tree)
     interpreter.evaluate()
 
     assert interpreter.global_scope['a'] == 2

@@ -14,30 +14,82 @@ LCURLY, RCURLY = "{", "}"
 UNDERSCORE = "_"
 COLON = ":"
 COMMA = ","
-PROGRAM, BEGIN, VAR, END, DOT, SEMI, ASSIGN, ID = "program", "begin", "var", "end", "DOT", "SEMI", "ASSIGN", "ID"
+PROGRAM, PROCEDURE, BEGIN, VAR, END = "program", "procedure", "begin", "var", "end"
+DOT, SEMI, ASSIGN, ID = "DOT", "SEMI", "ASSIGN", "ID"
 COMMENT = "COMMENT"
 
+RESERVED_KEYWORDS = set([BEGIN, END, PROGRAM, VAR, INTEGER, REAL, PROCEDURE])
+
 # Grammar
-# expr : product ((PLUS | MINUS) product)*
-# product : number ((MUL | DIV | INT_DIV) number)*
-# number : (PLUS | MINUS) number | INTEGER | LPAREN expr RPAREN
+#
+# expr:
+#    | product ((PLUS | MINUS) product)*
+#
+# product:
+#    number ((MUL | DIV | INT_DIV) number)*
+#
+# number:
+#    | (PLUS | MINUS) number
+#    | INTEGER
+#    | LPAREN expr RPAREN
 
 # Pascal grammar
-# ==============
-# program : PROGRAM variable SEMI block DOT
-# block : declarations compound_statement
-# declarations : VAR (variable_declaration SEMI)+ | empty
-# variable_declaration : variable (COMMA variable)* COLON type_spec
-# type_spec : INTEGER | REAL
-# compound_statement : BEGIN statement_list end
-# statement_list : statement | statement SEMI statement_list
-# statement : compound_statement | assignment_statement | empty
-# assignment_statement : variable ASSIGN expr
-# expr : product ((PLUS | MINUS) product)*
-# product : factor ((MUL | INT_DIV | FLOAT_DIV) factor)*
-# factor : PLUS factor | MINUS factor | INTEGER_CONST | REAL_CONST | variable | LPAREN expr RPAREN
-# variable : ID
-# empty :
+#
+# program:
+#    | PROGRAM ID SEMI block DOT
+
+# block:
+#    | declarations compound_statement
+
+# declarations:
+#    | VAR (variable_declaration SEMI)+ (procedure_declaration)*
+#    | (procedure_declaration)*
+#    | empty
+
+# procedure_declaration:
+#    | PROCEDURE ID SEMI block SEMI
+
+# variable_declaration:
+#    | variable (COMMA variable)* COLON type_spec
+
+# type_spec:
+#     | INTEGER
+#     | REAL
+
+# compound_statement:
+#     | BEGIN statement_list end
+
+# statement_list:
+#     | statement
+#     | statement SEMI statement_list
+
+# statement:
+#     | compound_statement
+#     | assignment_statement
+#     | empty
+
+# assignment_statement:
+#     | variable ASSIGN expr
+
+# expr:
+#     | product ((PLUS | MINUS) product)*
+
+# product:
+#     | factor ((MUL | INT_DIV | FLOAT_DIV) factor)*
+
+# factor:
+#     | PLUS factor
+#     | MINUS factor
+#     | INTEGER_CONST
+#     | REAL_CONST
+#     | variable
+#     | LPAREN expr RPAREN
+
+
+# variable:
+#     | ID
+
+# empty:
 
 class Token:
     def __init__(self, type, value):
@@ -117,7 +169,7 @@ class Lexer:
 
         result = result.lower().strip()
 
-        if result in (BEGIN, END, PROGRAM, VAR, INTEGER, REAL):
+        if result in RESERVED_KEYWORDS:
             return Token(result, result)
         elif result == 'div':
             return Token(INT_DIV, 'div')
@@ -278,6 +330,11 @@ class CompoundNode(BaseNode):
     def __str__(self):
         return "; ".join(map(str, self.children))
 
+class ProcedureDecl(BaseNode):
+    def __init__(self, proc_name, block_node):
+        self.proc_name = proc_name
+        self.block_node = block_node
+
 class BlockNode(BaseNode):
     def __init__(self, declaration_nodes, compound_node):
         self.declaration_nodes = declaration_nodes
@@ -335,7 +392,19 @@ class Parser:
                 res += self.variable_declaration()
                 self.eat(SEMI)
 
+        while self.current_token.type == PROCEDURE:
+            res.append(self.procedure_declaration())
+
         return res
+
+    def procedure_declaration(self):
+        self.eat(PROCEDURE)
+        proc_name = self.current_token.value
+        self.eat(ID)
+        self.eat(SEMI)
+        block_node = self.block()
+        self.eat(SEMI)
+        return ProcedureDecl(proc_name, block_node)
 
     def variable_declaration(self):
         var_nodes = [self.variable()]
@@ -538,6 +607,9 @@ class SymbolTableBuilder(NodeVisitor):
         for child in node.children:
             self.visit(child)
 
+    def visit_ProcedureDecl(self, node):
+        self.visit(node.block_node)
+
     def visit_BlockNode(self, node):
         for declaration_node in node.declaration_nodes:
             self.visit(declaration_node)
@@ -598,6 +670,9 @@ class Interpreter(InterpreterWithParser):
     def visit_CompoundNode(self, node):
         for child in node.children:
             self.visit(child)
+
+    def visit_ProcedureDecl(self, node):
+        pass
 
     def visit_BlockNode(self, node):
         for declaration_node in node.declaration_nodes:
