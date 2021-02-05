@@ -1,3 +1,7 @@
+#!python
+
+import sys
+
 # Token types
 #
 # EOF (end-of-file) token is used to indicate that
@@ -205,6 +209,8 @@ class Lexer:
             current_token = self.get_next_token()
 
         return res
+
+# Nodes
 
 class BaseNode(object):
     pass
@@ -435,6 +441,54 @@ class Parser:
 
         return root
 
+# Symbols
+
+class Symbol(object):
+    def __init__(self, name, type=None):
+        self.name = name
+        self.type = type
+
+    def __repr__(self):
+        return self.__str__()
+
+class BuiltinTypeSymbol(Symbol):
+    def __init__(self, name):
+        super().__init__(name)
+
+    def __str__(self):
+        return self.name
+
+class VarSymbol(Symbol):
+    def __init__(self, name, type):
+        super().__init__(name, type)
+
+    def __str__(self):
+        return f"<{self.name}:{self.type}>"
+
+class SymbolTable(object):
+    def __init__(self):
+        self.symbols = {}
+        self.init_builtins()
+
+    def init_builtins(self):
+        self.define(BuiltinTypeSymbol(INTEGER))
+        self.define(BuiltinTypeSymbol(REAL))
+
+    def __str__(self):
+        symbols = [name for name in self.symbols.values()]
+        return f"Symbol table: {symbols}"
+
+    __repr__ = __str__
+
+    def define(self, symbol):
+        self.symbols[symbol.name] = symbol
+
+    def lookup(self, name):
+        symbol = self.symbols.get(name)
+        return symbol
+
+# Visitors
+
 class NodeVisitor(object):
     def visit(self, node):
         method_name = 'visit_' + type(node).__name__
@@ -444,14 +498,63 @@ class NodeVisitor(object):
     def generic_visit(self, node):
         raise Exception('No visit_{} method'.format(type(node).__name__))
 
+class SymbolTableBuilder(NodeVisitor):
+    def __init__(self):
+        self.symbol_table = SymbolTable()
+
+    def visit_BinOpNode(self, node):
+        self.visit(node.left)
+        self.visit(node.right)
+
+    def visit_UnaryOpNode(self, node):
+        self.visit(node.child)
+
+    def visit_NumNode(self, node):
+        pass
+
+    def visit_VarNode(self, node):
+        var_name = node.value
+        if self.symbol_table.lookup(var_name) is None:
+            raise NameError(f"unknown variable '{var_name}'")
+
+    def visit_NoOpNode(self, node):
+        pass
+
+    def visit_AssignNode(self, node):
+        self.visit(node.var_node)
+        self.visit(node.expr_node)
+
+    def visit_VarDeclNode(self, node):
+        type_name = node.type_node.name
+        type = self.symbol_table.lookup(type_name)
+
+        if type is None:
+            raise NameError(f"unknown type '{type_name}'")
+        else:
+            var_symbol = VarSymbol(node.var_node.value, type)
+            self.symbol_table.define(var_symbol)
+
+    def visit_CompoundNode(self, node):
+        for child in node.children:
+            self.visit(child)
+
+    def visit_BlockNode(self, node):
+        for declaration_node in node.declaration_nodes:
+            self.visit(declaration_node)
+
+        self.visit(node.compound_node)
+
+    def visit_ProgramNode(self, node):
+        self.visit(node.block_node)
+
+
 class InterpreterWithParser(NodeVisitor):
-    def __init__(self, parser):
-        self.parser = parser
+    def __init__(self, tree):
+        self.tree = tree
         self.global_scope = {}
 
     def evaluate(self):
-        root = self.parser.parse()
-        return self.visit(root)
+        return self.visit(self.tree)
 
 class Interpreter(InterpreterWithParser):
     def visit_BinOpNode(self, node):
@@ -520,18 +623,24 @@ class LISPTranslator(InterpreterWithParser):
         return str(node.value)
 
 def main():
-    while True:
-        try:
-            # To run under Python3 replace 'raw_input' call
-            # with 'input'
-            text = input('calc> ')
-        except EOFError:
-            break
-        if not text:
-            continue
-        interpreter = Interpreter(Lexer(text))
-        result = interpreter.evaluate()
-        print(result)
+    text = open(sys.argv[1], 'r').read()
+
+    lexer = Lexer(text)
+    parser = Parser(lexer)
+    tree = parser.parse()
+    symtab_builder = SymbolTableBuilder()
+    symtab_builder.visit(tree)
+    print('')
+    print('Symbol Table contents:')
+    print(symtab_builder.symbol_table)
+
+    interpreter = Interpreter(tree)
+    result = interpreter.evaluate()
+
+    print('')
+    print('Run-time GLOBAL_MEMORY contents:')
+    for k, v in sorted(interpreter.global_scope.items()):
+        print('{} = {}'.format(k, v))
 
 
 if __name__ == '__main__':

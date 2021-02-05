@@ -1,6 +1,7 @@
 import pytest
 
-from calc import Lexer, Parser, Interpreter, ReversePolishNotationTranslator, LISPTranslator
+from interpreter import Lexer, Parser, Interpreter, ReversePolishNotationTranslator, LISPTranslator
+from interpreter import SymbolTableBuilder
 
 @pytest.mark.parametrize(
     "expression, expected_result",
@@ -82,7 +83,8 @@ def test_parser(expression, expected_result):
     ]
 )
 def test_expressions(expression, expected_result):
-    interpreter = Interpreter(Parser(Lexer(f"PROGRAM test; BEGIN a := {expression} END.")))
+    tree = Parser(Lexer(f"PROGRAM test; BEGIN a := {expression} END.")).parse()
+    interpreter = Interpreter(tree)
     interpreter.evaluate()
 
     assert expected_result == interpreter.global_scope['a']
@@ -96,7 +98,8 @@ def test_expressions(expression, expected_result):
 )
 def test_invalid_expression(expression):
     with pytest.raises(Exception, match=r"Invalid syntax"):
-        Interpreter(Parser(Lexer(f"PROGRAM test; BEGIN a := {expression} END."))).evaluate()
+        tree = Parser(Lexer(f"PROGRAM test; BEGIN a := {expression} END.")).parse()
+        Interpreter(tree).evaluate()
 
 def test_parser_case_insensitive():
     sources = '''
@@ -125,7 +128,7 @@ def test_parser_case_insensitive():
 
         '''
 
-    interpreter = Interpreter(Parser(Lexer(sources)))
+    interpreter = Interpreter(Parser(Lexer(sources)).parse())
     interpreter.evaluate()
 
     assert interpreter.global_scope['a'] == 2
@@ -134,26 +137,59 @@ def test_parser_case_insensitive():
     assert interpreter.global_scope['x'] == 11
     assert interpreter.global_scope['y'] == 20 / 7 + 3.14
 
-# @pytest.mark.parametrize(
-#     "expression, expected_result",
-#     [
-#         pytest.param(" 22 + 11 ", "22 11 +"),
-#         pytest.param("(5 + 3) * 12 / 3", "5 3 + 12 * 3 /"),
-#     ]
-# )
-# def test_reverse_polish_notation_translator(expression, expected_result):
-#     res = ReversePolishNotationTranslator(Parser(Lexer(f"BEGIN a := {expression} END."))).evaluate()
+@pytest.mark.parametrize(
+    "sources, expected_error",
+    [
+        pytest.param(
+            '''
+            PROGRAM NameError1;
+            VAR
+               a : INTEGER;
 
-#     assert expected_result == res
+            BEGIN
+               a := 2 + b;
+            END.
+            ''',
+            "unknown variable 'b'",
+        ),
+        pytest.param(
+            '''
+            PROGRAM NameError2;
+            VAR
+               b : INTEGER;
 
-# @pytest.mark.parametrize(
-#     "expression, expected_result",
-#     [
-#         pytest.param(" 22 + 11 ", "(+ 22 11)"),
-#         pytest.param("(5 + 3) * 12 / 3", "(/ (* (+ 5 3) 12) 3)"),
-#     ]
-# )
-# def test_lisp_translator(expression, expected_result):
-#     res = LISPTranslator(Parser(Lexer(expression))).evaluate()
+            BEGIN
+               b := 1;
+               a := b + 2;
+            END.
+            ''',
+            "unknown variable 'a'",
+        ),
+        pytest.param(
+            '''
+            PROGRAM Part11;
+            VAR
+               number : INTEGER;
+               a, b   : INTEGER;
+               y      : REAL;
 
-#     assert expected_result == res
+            BEGIN {Part11}
+               number := 2;
+               a := number ;
+               b := 10 * a + 10 * number DIV 4;
+               y := 20 / 7 + 3.14
+            END.  {Part11}
+            ''',
+            None,
+        ),
+    ]
+)
+def test_symbol_table_builder(sources, expected_error):
+    builder = SymbolTableBuilder()
+    root = Parser(Lexer(sources)).parse()
+
+    if expected_error:
+        with pytest.raises(NameError, match=expected_error):
+            builder.visit(root)
+    else:
+        assert builder.visit(root) is None
