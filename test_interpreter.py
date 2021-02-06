@@ -1,6 +1,8 @@
 import pytest
+import re
 
 from interpreter import Lexer, Parser, Interpreter, SemanticAnalyzer, SourceToSourceTranslator
+from interpreter import Error, LexerError
 
 @pytest.mark.parametrize(
     "expression, expected_result",
@@ -34,12 +36,19 @@ from interpreter import Lexer, Parser, Interpreter, SemanticAnalyzer, SourceToSo
                 "y", ":=", 20, "/", 7, "+", 3.14, ";", "end", ".",
             ]
         ),
+        pytest.param("x ^ y", LexerError(message="unknown lexeme '^' line: 1 column: 3")),
+        pytest.param("x + y;\nx @ y", LexerError(message="unknown lexeme '@' line: 2 column: 3")),
     ]
 )
 def test_lexer(expression, expected_result):
-    res = Lexer(expression).get_all_tokens()
+    lexer = Lexer(expression)
 
-    assert expected_result == res
+    if isinstance(expected_result, Error):
+        with pytest.raises(expected_result.__class__, match=re.escape(expected_result.message)):
+            res = lexer.get_all_tokens()
+    else:
+        res = lexer.get_all_tokens()
+        assert expected_result == res
 
 @pytest.mark.parametrize(
     "expression, expected_result",

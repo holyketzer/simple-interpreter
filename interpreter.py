@@ -1,6 +1,7 @@
 #!python
 
 import sys
+from enum import Enum
 
 # Token types
 #
@@ -100,6 +101,30 @@ RESERVED_KEYWORDS = set([BEGIN, END, PROGRAM, VAR, INTEGER, REAL, PROCEDURE])
 
 # empty:
 
+class ErrorCode(Enum):
+    UNEXPECTED_TOKEN = 'Unexpected token'
+    ID_NOT_FOUND     = 'Identifier not found'
+    DUPLICATE_ID     = 'Duplicate id found'
+
+class Error(Exception):
+    def __init__(self, error_code=None, token=None, message=None):
+        self.error_code = error_code
+        self.token = token
+        # add exception class name before the message
+        self.message = message
+
+    def __str__(self):
+        return self.message
+
+class LexerError(Error):
+    pass
+
+class ParserError(Error):
+    pass
+
+class SemanticError(Error):
+    pass
+
 class Token:
     def __init__(self, type, value):
         # token type: INTEGER, PLUS, or EOF
@@ -131,13 +156,29 @@ class Lexer:
         # current token instance
         self.current_char = self.text[self.pos]
 
+        self.lineno = 1
+        self.column = 1
+
     def error(self):
-        raise Exception(f"Invalid character '{self.current_char}'")
+        s = "unknown lexeme '{lexeme}' line: {lineno} column: {column}".format(
+            lexeme=self.current_char,
+            lineno=self.lineno,
+            column=self.column,
+        )
+
+        raise LexerError(message=s)
 
     def advance(self):
+        if self.current_char == '\n':
+            self.lineno += 1
+            self.column = 0
+
         """Advance the 'pos' pointer and set the 'current_char' variable."""
         self.pos += 1
         self.current_char = self.peek(delta=0)
+
+        if self.current_char:
+            self.column += 1
 
     def peek(self, delta=1):
         if self.pos + delta < len(self.text):
