@@ -718,7 +718,78 @@ class SemanticAnalyzer(NodeVisitor):
         self.visit(node.block_node)
 
 
-class InterpreterWithParser(NodeVisitor):
+class SourceToSourceTranslator(NodeVisitor):
+    def __init__(self):
+        self.offset = 0
+        self.padding = ""
+
+    def down(self):
+        self.offset += 2
+        self.padding = " " * self.offset
+
+    def up(self):
+        self.offset -= 2
+        self.padding = " " * self.offset
+
+    def translate(self, tree):
+        return self.visit(tree)
+
+    def visit_BinOpNode(self, node):
+        return f"{self.visit(node.left)} {node.op.value} {self.visit(node.right)}"
+
+    def visit_UnaryOpNode(self, node):
+        return f"{node.op.value} {self.visit(node.child)}"
+
+    def visit_NumNode(self, node):
+        return str(node.value)
+
+    def visit_VarNode(self, node):
+        return node.value
+
+    def visit_NoOpNode(self, node):
+        return ""
+
+    def visit_AssignNode(self, node):
+        return f"{self.padding}{self.visit(node.var_node)} := {self.visit(node.expr_node)}"
+
+    def visit_VarDeclNode(self, node):
+        return f"{self.visit(node.var_node)} : {self.visit(node.type_node)}"
+
+    def visit_TypeNode(self, node):
+        return node.name
+
+    def visit_CompoundNode(self, node):
+        return "\n".join([self.visit(child) for child in node.children])
+
+    def visit_ProcedureDecl(self, node):
+        params = ""
+
+        if len(node.params) > 0:
+            params = "(" + ", ".join([self.visit(param_node) for param_node in node.params])  + ")"
+
+        return f"{self.padding}procedure {node.proc_name}{params};\n{self.visit(node.block_node)}; {{END OF {node.proc_name}}}"
+
+    def visit_BlockNode(self, node):
+        self.down()
+        declarations = []
+
+        for declaration_node in node.declaration_nodes:
+            if isinstance(declaration_node, VarDeclNode):
+                declarations.append(f"{self.padding}var {self.visit(declaration_node)}")
+            else:
+                declarations.append(self.visit(declaration_node))
+
+        declarations = "\n".join(declarations)
+        compound = self.visit(node.compound_node)
+        self.up()
+
+        return f"{declarations}\n{self.padding}begin\n{compound}{self.padding}end"
+
+    def visit_ProgramNode(self, node):
+        block = self.visit(node.block_node)
+        return f"program {node.name};\n{block}. {{END OF {node.name}}}"
+
+class Interpreter(NodeVisitor):
     def __init__(self, tree):
         self.tree = tree
         self.global_scope = {}
@@ -726,7 +797,6 @@ class InterpreterWithParser(NodeVisitor):
     def evaluate(self):
         return self.visit(self.tree)
 
-class Interpreter(InterpreterWithParser):
     def visit_BinOpNode(self, node):
         if node.op.type == PLUS:
             return self.visit(node.left) + self.visit(node.right)

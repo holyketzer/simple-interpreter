@@ -1,6 +1,6 @@
 import pytest
 
-from interpreter import Lexer, Parser, Interpreter, SemanticAnalyzer
+from interpreter import Lexer, Parser, Interpreter, SemanticAnalyzer, SourceToSourceTranslator
 
 @pytest.mark.parametrize(
     "expression, expected_result",
@@ -224,3 +224,39 @@ def test_semantic_analyzer(sources, expected_error):
             analyzer.visit(root)
     else:
         assert analyzer.visit(root) is None
+
+@pytest.mark.parametrize(
+    "sources, expected_result",
+    [
+        pytest.param(
+            '''
+            program Main;
+            var x, y: real;
+
+            procedure Alpha(a : integer);
+                var y : integer;
+            begin
+                x := a + x + y;
+            end;
+            begin { Main }
+            end.  { Main }
+            ''',
+'''program main;
+  var x : real
+  var y : real
+  procedure alpha(a : integer);
+    var y : integer
+  begin
+    x := a + x + y
+  end; {END OF alpha}
+begin
+end. {END OF main}'''
+        )
+    ]
+)
+def test_source_to_source_translator(sources, expected_result):
+    root = Parser(Lexer(sources)).parse()
+    translator = SourceToSourceTranslator()
+    result = translator.translate(root)
+
+    assert result == expected_result
