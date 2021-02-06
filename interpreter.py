@@ -599,9 +599,8 @@ class ScopedSymbolTable(object):
     def __init__(self, scope_name, parent_scope=None):
         self.symbols = {}
         self.scope_name = scope_name
-        self.scope_level = 1 if parent_scope is None else parent_scope.scope_level + 1
+        self.scope_level = 0 if parent_scope is None else parent_scope.scope_level + 1
         self.parent_scope = parent_scope
-        self.init_builtins()
 
     def init_builtins(self):
         self.define(BuiltinTypeSymbol(INTEGER))
@@ -639,7 +638,8 @@ class NodeVisitor(object):
 
 class SemanticAnalyzer(NodeVisitor):
     def __init__(self):
-        pass
+        self.current_scope = ScopedSymbolTable(scope_name='builtins')
+        self.current_scope.init_builtins()
 
     def visit_BinOpNode(self, node):
         self.visit(node.left)
@@ -713,9 +713,13 @@ class SemanticAnalyzer(NodeVisitor):
         self.visit(node.compound_node)
 
     def visit_ProgramNode(self, node):
-        self.global_scope = ScopedSymbolTable(scope_name='global')
+        self.global_scope = ScopedSymbolTable(
+            scope_name='global',
+            parent_scope=self.current_scope
+        )
         self.current_scope = self.global_scope
         self.visit(node.block_node)
+        self.current_scope = self.current_scope.parent_scope
 
 
 class SourceToSourceTranslator(NodeVisitor):
@@ -859,15 +863,15 @@ def main():
     tree = parser.parse()
     analyzer = SemanticAnalyzer()
     analyzer.visit(tree)
+    print(analyzer.current_scope)
     print('')
-    print('Symbol Table contents:')
     print(analyzer.global_scope)
 
     interpreter = Interpreter(tree)
     result = interpreter.evaluate()
 
     print('')
-    print('Run-time GLOBAL_MEMORY contents:')
+    print('Run-time GLOBAL_SCOPE contents:')
     for k, v in sorted(interpreter.global_scope.items()):
         print('{} = {}'.format(k, v))
 
