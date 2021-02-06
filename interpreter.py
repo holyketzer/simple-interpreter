@@ -42,9 +42,11 @@ RESERVED_KEYWORDS = set([BEGIN, END, PROGRAM, VAR, INTEGER, REAL, PROCEDURE])
 #    | declarations compound_statement
 
 # declarations:
-#    | VAR (variable_declaration SEMI)+ (procedure_declaration)*
-#    | (procedure_declaration)*
-#    | empty
+#    | (declaration)*
+
+# declaration:
+#    | VAR (variable_declaration SEMI)+
+#    | (procedure_declaration)+
 
 # procedure_declaration:
 #    | PROCEDURE ID SEMI block SEMI
@@ -385,14 +387,24 @@ class Parser:
 
     def declarations(self):
         res = []
+
+        declaration = self.declaration()
+        while declaration:
+            res += declaration
+            declaration = self.declaration()
+
+        return res
+
+    def declaration(self):
+        res = []
+
         if self.current_token.type == VAR:
             self.eat(VAR)
 
             while self.current_token.type == ID:
                 res += self.variable_declaration()
                 self.eat(SEMI)
-
-        while self.current_token.type == PROCEDURE:
+        elif self.current_token.type == PROCEDURE:
             res.append(self.procedure_declaration())
 
         return res
