@@ -9,7 +9,7 @@ import sys
 PLUS, MINUS, MUL, REAL_DIV, INT_DIV = "PLUS", "MINUS", "MUL", "REAL_DIV", "INT_DIV"
 INTEGER, REAL, EOF = "integer", "real", "EOF"
 INTEGER_CONST, REAL_CONST = "INTEGER_CONST", "REAL_CONST"
-OPEN_PRS, CLOSE_PRS = "(", ")"
+LPAREN, RPAREN = "(", ")"
 LCURLY, RCURLY = "{", "}"
 UNDERSCORE = "_"
 COLON = ":"
@@ -49,7 +49,14 @@ RESERVED_KEYWORDS = set([BEGIN, END, PROGRAM, VAR, INTEGER, REAL, PROCEDURE])
 #    | (procedure_declaration)+
 
 # procedure_declaration:
-#    | PROCEDURE ID SEMI block SEMI
+#    | PROCEDURE ID (LPAREN formal_parameter_list RPAREN)? SEMI block SEMI
+
+# formal_parameter_list:
+#    | formal_parameters
+#    | formal_parameters SEMI formal_parameter_list
+
+# formal_parameters:
+#    | ID (COMMA ID)* COLON type_spec
 
 # variable_declaration:
 #    | variable (COMMA variable)* COLON type_spec
@@ -224,7 +231,7 @@ class Lexer:
                 self.advance()
                 return Token(REAL_DIV, "/")
 
-            if self.current_char in (OPEN_PRS, CLOSE_PRS):
+            if self.current_char in (LPAREN, RPAREN):
                 current_char = self.current_char
                 self.advance()
                 return Token(current_char, current_char)
@@ -332,9 +339,15 @@ class CompoundNode(BaseNode):
     def __str__(self):
         return "; ".join(map(str, self.children))
 
+class Param(BaseNode):
+    def __init__(self, var_node, type_node):
+        self.var_node = var_node
+        self.type_node = type_node
+
 class ProcedureDecl(BaseNode):
-    def __init__(self, proc_name, block_node):
+    def __init__(self, proc_name, params, block_node):
         self.proc_name = proc_name
+        self.params = params
         self.block_node = block_node
 
 class BlockNode(BaseNode):
@@ -413,10 +426,38 @@ class Parser:
         self.eat(PROCEDURE)
         proc_name = self.current_token.value
         self.eat(ID)
+
+        params = []
+        if self.current_token.type == LPAREN:
+            self.eat(LPAREN)
+            params = self.formal_parameter_list()
+            self.eat(RPAREN)
+
         self.eat(SEMI)
         block_node = self.block()
         self.eat(SEMI)
-        return ProcedureDecl(proc_name, block_node)
+        return ProcedureDecl(proc_name, params, block_node)
+
+    def formal_parameter_list(self):
+        params = self.formal_parameters()
+
+        while self.current_token.type == SEMI:
+            self.eat(SEMI)
+            params += self.formal_parameters()
+
+        return params
+
+    def formal_parameters(self):
+        variables = [self.variable()]
+
+        while self.current_token.type == COMMA:
+            self.eat(COMMA)
+            variables.append(self.variable())
+
+        self.eat(COLON)
+        type_node = self.type_spec()
+
+        return list(map(lambda variable: VarDeclNode(variable, type_node), variables))
 
     def variable_declaration(self):
         var_nodes = [self.variable()]
@@ -492,10 +533,10 @@ class Parser:
         """Return an INTEGER token value"""
         token = self.current_token
 
-        if token.type == OPEN_PRS:
-            self.eat(OPEN_PRS)
+        if token.type == LPAREN:
+            self.eat(LPAREN)
             node = self.expr()
-            self.eat(CLOSE_PRS)
+            self.eat(RPAREN)
             return node
         elif token.type in (PLUS, MINUS):
             self.eat(token.type)
@@ -546,9 +587,11 @@ class VarSymbol(Symbol):
     def __str__(self):
         return f"<{self.__class__.__name__}({self.name} : {self.type.name})>"
 
-class SymbolTable(object):
-    def __init__(self):
+class ScopedSymbolTable(object):
+    def __init__(self, scope_name, scope_level):
         self.symbols = {}
+        self.scope_name = scope_name
+        self.scope_level = scope_level
         self.init_builtins()
 
     def init_builtins(self):
@@ -557,7 +600,9 @@ class SymbolTable(object):
 
     def __str__(self):
         symbols = "\n".join([f"  {symbol}" for symbol in self.symbols.values()])
-        return f"Symbol table:\n{symbols}"
+        return "\n".join(
+            [f"Scope name: {self.scope_name}", f"Scope level: {self.scope_level}", symbols]
+        )
 
     __repr__ = __str__
 
@@ -581,7 +626,7 @@ class NodeVisitor(object):
 
 class SemanticAnalyzer(NodeVisitor):
     def __init__(self):
-        self.symbol_table = SymbolTable()
+        self.scope = ScopedSymbolTable(scope_name='global', scope_level=1)
 
     def visit_BinOpNode(self, node):
         self.visit(node.left)
@@ -595,7 +640,7 @@ class SemanticAnalyzer(NodeVisitor):
 
     def visit_VarNode(self, node):
         var_name = node.value
-        if self.symbol_table.lookup(var_name) is None:
+        if self.scope.lookup(var_name) is None:
             raise NameError(f"unknown variable '{var_name}'")
 
     def visit_NoOpNode(self, node):
@@ -607,19 +652,19 @@ class SemanticAnalyzer(NodeVisitor):
 
     def visit_VarDeclNode(self, node):
         var_name = node.var_node.value
-        prev_var_def = self.symbol_table.lookup(var_name)
+        prev_var_def = self.scope.lookup(var_name)
 
         if prev_var_def:
             raise NameError(f"variable '{var_name}' already defined as '{prev_var_def.type.name}'")
         else:
             type_name = node.type_node.name
-            type = self.symbol_table.lookup(type_name)
+            type = self.scope.lookup(type_name)
 
             if type is None:
                 raise NameError(f"unknown type '{type_name}'")
             else:
                 var_symbol = VarSymbol(var_name, type)
-                self.symbol_table.define(var_symbol)
+                self.scope.define(var_symbol)
 
     def visit_CompoundNode(self, node):
         for child in node.children:
@@ -725,7 +770,7 @@ def main():
     analyzer.visit(tree)
     print('')
     print('Symbol Table contents:')
-    print(analyzer.symbol_table)
+    print(analyzer.scope)
 
     interpreter = Interpreter(tree)
     result = interpreter.evaluate()

@@ -20,8 +20,9 @@ begin
 end;
 
 BEGIN {Part11}
-   number := 2;
-   a := number ;
+   {number := 2;}
+   a := number;
+   {WriteLn(a);}
    b := 10 * a + 10 * number DIV 4;
    y := 20 / 7 + 3.14
 END.  {Part11}

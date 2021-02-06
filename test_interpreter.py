@@ -116,7 +116,7 @@ def test_parser_case_insensitive():
            a, _b, c, x : INTEGER;
            y          : REAL;
 
-        PROCEDURE P1;
+        PROCEDURE P1(z, z2: REAL; z3 : integer);
             VAR A2 : REAL;
         BEGIN {P1}
             a := 1
