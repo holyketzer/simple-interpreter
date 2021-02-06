@@ -2,7 +2,7 @@ import pytest
 import re
 
 from interpreter import Lexer, Parser, Interpreter, SemanticAnalyzer, SourceToSourceTranslator
-from interpreter import Error, LexerError
+from interpreter import Error, LexerError, SemanticError
 
 @pytest.mark.parametrize(
     "expression, expected_result",
@@ -104,14 +104,20 @@ def test_expressions(expression, expected_result):
     assert expected_result == interpreter.global_scope['a']
 
 @pytest.mark.parametrize(
-    "expression",
+    "expression, error",
     [
-       pytest.param("3 + "),
-       pytest.param("10 + 2 * 3 2 * 10 / 4 5 8"),
+        pytest.param(
+            "3 + ",
+            "Expected token TokenType.INTEGER_CONST, got: Token(TokenType.END, 'end' at 1:31)"
+        ),
+        pytest.param(
+            "10 + 2 * 3 2 * 10 / 4 5 8",
+            "Expected token TokenType.END, got: Token(TokenType.INTEGER_CONST, 2 at 1:37)"
+        ),
     ]
 )
-def test_invalid_expression(expression):
-    with pytest.raises(Exception, match=r"Invalid syntax"):
+def test_invalid_expression(expression, error):
+    with pytest.raises(Exception, match=re.escape(error)):
         tree = Parser(Lexer(f"PROGRAM test; BEGIN a := {expression} END.")).parse()
         Interpreter(tree).evaluate()
 
@@ -220,7 +226,7 @@ def test_parser_case_insensitive():
                x := x + y;
             end.
             ''',
-            "variable 'y' already defined as 'integer'",
+            "variable 'y' already defined as 'integer' at",
         ),
     ]
 )
@@ -229,7 +235,7 @@ def test_semantic_analyzer(sources, expected_error):
     analyzer = SemanticAnalyzer()
 
     if expected_error:
-        with pytest.raises(NameError, match=expected_error):
+        with pytest.raises(SemanticError, match=expected_error):
             analyzer.visit(root)
     else:
         assert analyzer.visit(root) is None

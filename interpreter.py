@@ -3,24 +3,6 @@
 import sys
 from enum import Enum
 
-# Token types
-#
-# EOF (end-of-file) token is used to indicate that
-# there is no more input left for lexical analysis
-PLUS, MINUS, MUL, REAL_DIV, INT_DIV = "PLUS", "MINUS", "MUL", "REAL_DIV", "INT_DIV"
-INTEGER, REAL, EOF = "integer", "real", "EOF"
-INTEGER_CONST, REAL_CONST = "INTEGER_CONST", "REAL_CONST"
-LPAREN, RPAREN = "(", ")"
-LCURLY, RCURLY = "{", "}"
-UNDERSCORE = "_"
-COLON = ":"
-COMMA = ","
-PROGRAM, PROCEDURE, BEGIN, VAR, END = "program", "procedure", "begin", "var", "end"
-DOT, SEMI, ASSIGN, ID = "DOT", "SEMI", "ASSIGN", "ID"
-COMMENT = "COMMENT"
-
-RESERVED_KEYWORDS = set([BEGIN, END, PROGRAM, VAR, INTEGER, REAL, PROCEDURE])
-
 # Grammar
 #
 # expr:
@@ -105,6 +87,7 @@ class ErrorCode(Enum):
     UNEXPECTED_TOKEN = 'Unexpected token'
     ID_NOT_FOUND     = 'Identifier not found'
     DUPLICATE_ID     = 'Duplicate id found'
+    UNKNOWN_SYMBOL   = 'Unknown symbol'
 
 class Error(Exception):
     def __init__(self, error_code=None, token=None, message=None):
@@ -125,12 +108,52 @@ class ParserError(Error):
 class SemanticError(Error):
     pass
 
+class TokenType(Enum):
+    # EOF (end-of-file) token is used to indicate that
+    # there is no more input left for lexical analysis
+    LPAREN = "("
+    RPAREN = ")"
+    LCURLY = "{"
+    RCURLY = "}"
+    UNDERSCORE = "_"
+    COLON = ":"
+    COMMA = ","
+    DOT = "."
+    MINUS = "-"
+    MUL = "*"
+    PLUS = "+"
+    SEMI = ";"
+    REAL_DIV = "/"
+
+    ASSIGN = ":="
+    COMMENT = "COMMENT"
+    EOF = "EOF"
+    ID = "ID"
+    INTEGER_CONST = "INTEGER_CONST"
+    REAL_CONST = "REAL_CONST"
+
+    # block of reserved words
+    PROGRAM = "program" # should be first here (see Lexer._build_reserved_keywords)
+    BEGIN = "begin"
+    INTEGER = "integer"
+    INT_DIV = "div"
+    PROCEDURE = "procedure"
+    REAL = "real"
+    VAR = "var"
+    END = "end"  # should be last
+    # end of block of reserved words
+
 class Token:
-    def __init__(self, type, value):
+    def __init__(self, type, value, lineno=None, column=None):
         # token type: INTEGER, PLUS, or EOF
         self.type = type
         # token value: 0, 1, 2. 3, 4, 5, 6, 7, 8, 9, '+', or None
         self.value = value
+        self.lineno = lineno
+        self.column = column
+
+    def position(self):
+        return f"{self.lineno}:{self.column}"
 
     def __str__(self):
         """String representation of the class instance.
@@ -139,15 +162,37 @@ class Token:
             Token(INTEGER, 3)
             Token(PLUS '+')
         """
-        return 'Token({type}, {value})'.format(
+        return 'Token({type}, {value} at {position})'.format(
             type=self.type,
-            value=repr(self.value)
+            value=repr(self.value),
+            position=self.position(),
         )
 
     def __repr__(self):
         return self.__str__()
 
 class Lexer:
+    def _build_reserved_keywords():
+        """Build a dictionary of reserved keywords.
+        The function relies on the fact that in the TokenType
+        enumeration the beginning of the block of reserved keywords is
+        marked with PROGRAM and the end of the block is marked with
+        the END keyword.
+        """
+        # enumerations support iteration, in definition order
+        token_list = list(TokenType)
+        start_index = token_list.index(TokenType.PROGRAM)
+        end_index = token_list.index(TokenType.END)
+
+        reserved_keywords = {
+            token_type.value: token_type
+            for token_type in token_list[start_index:end_index + 1]
+        }
+
+        return reserved_keywords
+
+    RESERVED_KEYWORDS = _build_reserved_keywords()
+
     def __init__(self, text):
         # client string input, e.g. "3+5"
         self.text = text
@@ -191,12 +236,14 @@ class Lexer:
             self.advance()
 
     def skip_comment(self):
-        while self.current_char != RCURLY:
+        while self.current_char != "}":
             self.advance()
         self.advance()  # the closing curly brace
 
     def number(self):
         """Return a (mulidigit) integer consumed from the input."""
+        lineno = self.lineno
+        column = self.column
         result = ''
 
         while self.current_char.isdigit() or self.current_char == ".":
@@ -204,37 +251,41 @@ class Lexer:
             self.advance()
 
         if "." in result:
-            return Token(REAL_CONST, float(result))
+            return Token(TokenType.REAL_CONST, float(result), lineno=lineno, column=column)
         else:
-            return Token(INTEGER_CONST, int(result))
+            return Token(TokenType.INTEGER_CONST, int(result), lineno=lineno, column=column)
 
     def is_name_begin(self, current_char):
-        return current_char.isalpha() or current_char == UNDERSCORE
+        return current_char.isalpha() or current_char == "_"
 
     def id(self):
+        lineno = self.lineno
+        column = self.column
         result = ''
+
         while self.current_char.isdigit() or self.is_name_begin(self.current_char):
             result += self.current_char
             self.advance()
 
         result = result.lower().strip()
 
-        if result in RESERVED_KEYWORDS:
-            return Token(result, result)
-        elif result == 'div':
-            return Token(INT_DIV, 'div')
+        if result in Lexer.RESERVED_KEYWORDS:
+            return Token(Lexer.RESERVED_KEYWORDS[result], result, lineno=lineno, column=column)
         else:
-            return Token(ID, result)
+            return Token(TokenType.ID, result, lineno=lineno, column=column)
 
     def comment(self):
+        lineno = self.lineno
+        column = self.column
         result = ''
-        while self.current_char != RCURLY:
+
+        while self.current_char != "}":
             result += self.current_char
             self.advance()
 
         result += self.current_char
 
-        return Token(COMMENT, result.strip())
+        return Token(TokenType.COMMENT, result.strip(), lineno=lineno, column=column)
 
     def get_next_token(self):
         """Lexical analyzer (also known as scanner or tokenizer)
@@ -245,68 +296,49 @@ class Lexer:
         self.skip_whitespaces()
 
         while self.current_char:
+            lineno = self.lineno
+            column = self.column
+
             if self.current_char.isdigit():
                 return self.number()
 
             if self.is_name_begin(self.current_char):
                 return self.id()
 
-            if self.current_char == LCURLY:
+            if self.current_char == "{":
                 self.skip_comment()
                 self.skip_whitespaces()
                 continue
-
-            if self.current_char == '+':
-                self.advance()
-                return Token(PLUS, "+")
-
-            if self.current_char == '-':
-                self.advance()
-                return Token(MINUS, "-")
-
-            if self.current_char == '*':
-                self.advance()
-                return Token(MUL, "*")
-
-            if self.current_char == '/':
-                self.advance()
-                return Token(REAL_DIV, "/")
-
-            if self.current_char in (LPAREN, RPAREN):
-                current_char = self.current_char
-                self.advance()
-                return Token(current_char, current_char)
-
-            if self.current_char == ".":
-                self.advance()
-                return Token(DOT, ".")
-
-            if self.current_char == ",":
-                self.advance()
-                return Token(COMMA, ",")
-
-            if self.current_char == ";":
-                self.advance()
-                return Token(SEMI, ";")
 
             if self.current_char == ":":
                 if self.peek() == "=":
                     self.advance()
                     self.advance()
-                    return Token(ASSIGN, ":=")
+                    return Token(TokenType.ASSIGN, ":=", lineno=lineno, column=column)
                 else:
                     self.advance()
-                    return Token(COLON, ":")
+                    return Token(TokenType.COLON, ":", lineno=lineno, column=column)
 
-            self.error()
+            try:
+                token_type = TokenType(self.current_char)
+                self.advance()
 
-        return Token(EOF, None)
+                return Token(
+                    type=token_type,
+                    value=token_type.value,  # e.g. ';', '.', etc
+                    lineno=lineno,
+                    column=column,
+                )
+            except ValueError:
+                self.error()
+
+        return Token(TokenType.EOF, None, lineno=self.lineno, column=self.column)
 
     def get_all_tokens(self):
         res = []
         current_token = self.get_next_token()
 
-        while current_token.type != EOF:
+        while current_token.type != TokenType.EOF:
             res.append(current_token.value)
             current_token = self.get_next_token()
 
@@ -413,8 +445,14 @@ class Parser:
         self.lexer = lexer
         self.current_token = self.lexer.get_next_token()
 
-    def error(self):
-        raise Exception(f'Invalid syntax token: {self.current_token}')
+    def error(self, msg=None, error_code=None):
+        msg = msg or f"Invalid token: {self.current_token}"
+
+        raise ParserError(
+            error_code=error_code,
+            token=self.current_token,
+            message=f"{msg} at {self.current_token.position()}",
+        )
 
     def eat(self, token_type):
         # compare the current token type with the passed token
@@ -424,14 +462,17 @@ class Parser:
         if self.current_token.type == token_type:
             self.current_token = self.lexer.get_next_token()
         else:
-            self.error()
+            self.error(
+                error_code=ErrorCode.UNEXPECTED_TOKEN,
+                msg=f"Expected token {token_type}, got: {self.current_token}",
+            )
 
     def program(self):
-        self.eat(PROGRAM)
+        self.eat(TokenType.PROGRAM)
         var_node = self.variable()
-        self.eat(SEMI)
+        self.eat(TokenType.SEMI)
         block_node = self.block()
-        self.eat(DOT)
+        self.eat(TokenType.DOT)
         return ProgramNode(var_node.value, block_node)
 
     def block(self):
@@ -452,38 +493,38 @@ class Parser:
     def declaration(self):
         res = []
 
-        if self.current_token.type == VAR:
-            self.eat(VAR)
+        if self.current_token.type == TokenType.VAR:
+            self.eat(TokenType.VAR)
 
-            while self.current_token.type == ID:
+            while self.current_token.type == TokenType.ID:
                 res += self.variable_declaration()
-                self.eat(SEMI)
-        elif self.current_token.type == PROCEDURE:
+                self.eat(TokenType.SEMI)
+        elif self.current_token.type == TokenType.PROCEDURE:
             res.append(self.procedure_declaration())
 
         return res
 
     def procedure_declaration(self):
-        self.eat(PROCEDURE)
+        self.eat(TokenType.PROCEDURE)
         proc_name = self.current_token.value
-        self.eat(ID)
+        self.eat(TokenType.ID)
 
         params = []
-        if self.current_token.type == LPAREN:
-            self.eat(LPAREN)
+        if self.current_token.type == TokenType.LPAREN:
+            self.eat(TokenType.LPAREN)
             params = self.formal_parameter_list()
-            self.eat(RPAREN)
+            self.eat(TokenType.RPAREN)
 
-        self.eat(SEMI)
+        self.eat(TokenType.SEMI)
         block_node = self.block()
-        self.eat(SEMI)
+        self.eat(TokenType.SEMI)
         return ProcedureDecl(proc_name, params, block_node)
 
     def formal_parameter_list(self):
         params = self.formal_parameters()
 
-        while self.current_token.type == SEMI:
-            self.eat(SEMI)
+        while self.current_token.type == TokenType.SEMI:
+            self.eat(TokenType.SEMI)
             params += self.formal_parameters()
 
         return params
@@ -491,11 +532,11 @@ class Parser:
     def formal_parameters(self):
         variables = [self.variable()]
 
-        while self.current_token.type == COMMA:
-            self.eat(COMMA)
+        while self.current_token.type == TokenType.COMMA:
+            self.eat(TokenType.COMMA)
             variables.append(self.variable())
 
-        self.eat(COLON)
+        self.eat(TokenType.COLON)
         type_node = self.type_spec()
 
         return list(map(lambda variable: VarDeclNode(variable, type_node), variables))
@@ -503,11 +544,11 @@ class Parser:
     def variable_declaration(self):
         var_nodes = [self.variable()]
 
-        while self.current_token.type == COMMA:
-            self.eat(COMMA)
+        while self.current_token.type == TokenType.COMMA:
+            self.eat(TokenType.COMMA)
             var_nodes.append(self.variable())
 
-        self.eat(COLON)
+        self.eat(TokenType.COLON)
         type_node = self.type_spec()
 
         return list(map(lambda var_node: VarDeclNode(var_node, type_node), var_nodes))
@@ -515,45 +556,45 @@ class Parser:
     def type_spec(self):
         token = self.current_token
 
-        if token.type in (INTEGER, REAL):
+        if token.type in (TokenType.INTEGER, TokenType.REAL):
             self.eat(token.type)
             return TypeNode(token)
         else:
             self.error()
 
     def compound_statement(self):
-        self.eat(BEGIN)
+        self.eat(TokenType.BEGIN)
         nodes = self.statement_list()
-        self.eat(END)
+        self.eat(TokenType.END)
         return CompoundNode(nodes)
 
     def statement_list(self):
         nodes_list = [self.statement()]
 
-        while self.current_token.type == SEMI:
-            self.eat(SEMI)
+        while self.current_token.type == TokenType.SEMI:
+            self.eat(TokenType.SEMI)
             nodes_list += self.statement_list()
 
         return nodes_list
 
     def statement(self):
-        if self.current_token.type == BEGIN:
+        if self.current_token.type == TokenType.BEGIN:
             return self.compound_statement()
-        elif self.current_token.type == ID:
+        elif self.current_token.type == TokenType.ID:
             return self.assignment_statement()
         else:
             return NoOpNode()
 
     def assignment_statement(self):
         var_node = self.variable()
-        self.eat(ASSIGN)
+        self.eat(TokenType.ASSIGN)
         expr_node = self.expr()
         return AssignNode(var_node, expr_node)
 
     def expr(self):
         left = self.product()
 
-        while self.current_token.type in (PLUS, MINUS):
+        while self.current_token.type in (TokenType.PLUS, TokenType.MINUS):
             token = self.current_token
             self.eat(token.type)
             left = BinOpNode(left, token, self.product())
@@ -563,7 +604,7 @@ class Parser:
     def product(self):
         left = self.factor()
 
-        while self.current_token.type in (MUL, REAL_DIV, INT_DIV):
+        while self.current_token.type in (TokenType.MUL, TokenType.REAL_DIV, TokenType.INT_DIV):
             token = self.current_token
             self.eat(token.type)
             left = BinOpNode(left, token, self.factor())
@@ -574,32 +615,32 @@ class Parser:
         """Return an INTEGER token value"""
         token = self.current_token
 
-        if token.type == LPAREN:
-            self.eat(LPAREN)
+        if token.type == TokenType.LPAREN:
+            self.eat(TokenType.LPAREN)
             node = self.expr()
-            self.eat(RPAREN)
+            self.eat(TokenType.RPAREN)
             return node
-        elif token.type in (PLUS, MINUS):
+        elif token.type in (TokenType.PLUS, TokenType.MINUS):
             self.eat(token.type)
             return UnaryOpNode(token, self.factor())
-        elif token.type == ID:
+        elif token.type == TokenType.ID:
             return self.variable()
-        elif token.type == REAL_CONST:
-            self.eat(REAL_CONST)
+        elif token.type == TokenType.REAL_CONST:
+            self.eat(TokenType.REAL_CONST)
             return NumNode(token)
         else:
-            self.eat(INTEGER_CONST)
+            self.eat(TokenType.INTEGER_CONST)
             return NumNode(token)
 
     def variable(self):
         var_token = self.current_token
-        self.eat(ID)
+        self.eat(TokenType.ID)
         return VarNode(var_token)
 
     def parse(self):
         root = self.program()
 
-        if self.current_token.type != EOF:
+        if self.current_token.type != TokenType.EOF:
             self.error()
 
         return root
@@ -644,8 +685,8 @@ class ScopedSymbolTable(object):
         self.parent_scope = parent_scope
 
     def init_builtins(self):
-        self.define(BuiltinTypeSymbol(INTEGER))
-        self.define(BuiltinTypeSymbol(REAL))
+        self.define(BuiltinTypeSymbol(TokenType.INTEGER.value))
+        self.define(BuiltinTypeSymbol(TokenType.REAL.value))
 
     def __str__(self):
         symbols = "\n".join([f"  {symbol}" for symbol in self.symbols.values()])
@@ -682,6 +723,13 @@ class SemanticAnalyzer(NodeVisitor):
         self.current_scope = ScopedSymbolTable(scope_name='builtins')
         self.current_scope.init_builtins()
 
+    def error(self, error_code, token, msg=None):
+        raise SemanticError(
+            error_code=error_code,
+            token=token,
+            message=f"{msg} at {token.position()}",
+        )
+
     def visit_BinOpNode(self, node):
         self.visit(node.left)
         self.visit(node.right)
@@ -695,7 +743,11 @@ class SemanticAnalyzer(NodeVisitor):
     def visit_VarNode(self, node):
         var_name = node.value
         if self.current_scope.lookup(var_name) is None:
-            raise NameError(f"unknown variable '{var_name}'")
+            self.error(
+                error_code=ErrorCode.UNKNOWN_SYMBOL,
+                token=node.token,
+                msg=f"unknown variable '{var_name}'",
+            )
 
     def visit_NoOpNode(self, node):
         pass
@@ -709,13 +761,21 @@ class SemanticAnalyzer(NodeVisitor):
         prev_var_def = self.current_scope.lookup(var_name, current_scope_only=True)
 
         if prev_var_def:
-            raise NameError(f"variable '{var_name}' already defined as '{prev_var_def.type.name}'")
+            self.error(
+                error_code=ErrorCode.DUPLICATE_ID,
+                token=node.var_node.token,
+                msg=f"variable '{var_name}' already defined as '{prev_var_def.type.name}'",
+            )
         else:
             type_name = node.type_node.name
             type = self.current_scope.lookup(type_name)
 
             if type is None:
-                raise NameError(f"unknown type '{type_name}'")
+                self.error(
+                    error_code=ErrorCode.UNKNOWN_SYMBOL,
+                    token=node.type_node.token,
+                    msg=f"unknown type '{type_name}'",
+                )
             else:
                 var_symbol = VarSymbol(var_name, type)
                 self.current_scope.define(var_symbol)
@@ -843,23 +903,23 @@ class Interpreter(NodeVisitor):
         return self.visit(self.tree)
 
     def visit_BinOpNode(self, node):
-        if node.op.type == PLUS:
+        if node.op.type == TokenType.PLUS:
             return self.visit(node.left) + self.visit(node.right)
-        elif node.op.type == MINUS:
+        elif node.op.type == TokenType.MINUS:
             return self.visit(node.left) - self.visit(node.right)
-        elif node.op.type == MUL:
+        elif node.op.type == TokenType.MUL:
             return self.visit(node.left) * self.visit(node.right)
-        elif node.op.type == REAL_DIV:
+        elif node.op.type == TokenType.REAL_DIV:
             return self.visit(node.left) / self.visit(node.right)
-        elif node.op.type == INT_DIV:
+        elif node.op.type == TokenType.INT_DIV:
             return self.visit(node.left) // self.visit(node.right)
         else:
             raise NameError(f"unsupported binary op {node.op}")
 
     def visit_UnaryOpNode(self, node):
-        if node.op.type == MINUS:
+        if node.op.type == TokenType.MINUS:
             return -self.visit(node.child)
-        elif node.op.type == PLUS:
+        elif node.op.type == TokenType.PLUS:
             return +self.visit(node.child)
 
     def visit_NumNode(self, node):
