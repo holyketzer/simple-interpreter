@@ -1,7 +1,7 @@
 import pytest
 
 from interpreter import Lexer, Parser, Interpreter, ReversePolishNotationTranslator, LISPTranslator
-from interpreter import SymbolTableBuilder
+from interpreter import SemanticAnalyzer
 
 @pytest.mark.parametrize(
     "expression, expected_result",
@@ -117,7 +117,7 @@ def test_parser_case_insensitive():
            y          : REAL;
 
         PROCEDURE P1;
-            VAR A : REAL;
+            VAR A2 : REAL;
         BEGIN {P1}
             a := 1
         END;  {P1}
@@ -142,7 +142,7 @@ def test_parser_case_insensitive():
         '''
 
     tree = Parser(Lexer(sources)).parse()
-    SymbolTableBuilder().visit(tree)
+    SemanticAnalyzer().visit(tree)
 
     interpreter = Interpreter(tree)
     interpreter.evaluate()
@@ -198,14 +198,25 @@ def test_parser_case_insensitive():
             ''',
             None,
         ),
+        pytest.param(
+            '''
+            program SymTab6;
+               var x, y : integer;
+               var y : real;
+            begin
+               x := x + y;
+            end.
+            ''',
+            "variable 'y' already defined as 'integer'",
+        ),
     ]
 )
-def test_symbol_table_builder(sources, expected_error):
-    builder = SymbolTableBuilder()
+def test_semantic_analyzer(sources, expected_error):
     root = Parser(Lexer(sources)).parse()
+    analyzer = SemanticAnalyzer()
 
     if expected_error:
         with pytest.raises(NameError, match=expected_error):
-            builder.visit(root)
+            analyzer.visit(root)
     else:
-        assert builder.visit(root) is None
+        assert analyzer.visit(root) is None

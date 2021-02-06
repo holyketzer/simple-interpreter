@@ -537,14 +537,14 @@ class BuiltinTypeSymbol(Symbol):
         super().__init__(name)
 
     def __str__(self):
-        return self.name
+        return f"<{self.__class__.__name__}(name = '{self.name}')>"
 
 class VarSymbol(Symbol):
     def __init__(self, name, type):
         super().__init__(name, type)
 
     def __str__(self):
-        return f"<{self.name}:{self.type}>"
+        return f"<{self.__class__.__name__}({self.name} : {self.type.name})>"
 
 class SymbolTable(object):
     def __init__(self):
@@ -556,8 +556,8 @@ class SymbolTable(object):
         self.define(BuiltinTypeSymbol(REAL))
 
     def __str__(self):
-        symbols = [name for name in self.symbols.values()]
-        return f"Symbol table: {symbols}"
+        symbols = "\n".join([f"  {symbol}" for symbol in self.symbols.values()])
+        return f"Symbol table:\n{symbols}"
 
     __repr__ = __str__
 
@@ -579,7 +579,7 @@ class NodeVisitor(object):
     def generic_visit(self, node):
         raise Exception('No visit_{} method'.format(type(node).__name__))
 
-class SymbolTableBuilder(NodeVisitor):
+class SemanticAnalyzer(NodeVisitor):
     def __init__(self):
         self.symbol_table = SymbolTable()
 
@@ -606,14 +606,20 @@ class SymbolTableBuilder(NodeVisitor):
         self.visit(node.expr_node)
 
     def visit_VarDeclNode(self, node):
-        type_name = node.type_node.name
-        type = self.symbol_table.lookup(type_name)
+        var_name = node.var_node.value
+        prev_var_def = self.symbol_table.lookup(var_name)
 
-        if type is None:
-            raise NameError(f"unknown type '{type_name}'")
+        if prev_var_def:
+            raise NameError(f"variable '{var_name}' already defined as '{prev_var_def.type.name}'")
         else:
-            var_symbol = VarSymbol(node.var_node.value, type)
-            self.symbol_table.define(var_symbol)
+            type_name = node.type_node.name
+            type = self.symbol_table.lookup(type_name)
+
+            if type is None:
+                raise NameError(f"unknown type '{type_name}'")
+            else:
+                var_symbol = VarSymbol(var_name, type)
+                self.symbol_table.define(var_symbol)
 
     def visit_CompoundNode(self, node):
         for child in node.children:
@@ -715,11 +721,11 @@ def main():
     lexer = Lexer(text)
     parser = Parser(lexer)
     tree = parser.parse()
-    symtab_builder = SymbolTableBuilder()
-    symtab_builder.visit(tree)
+    analyzer = SemanticAnalyzer()
+    analyzer.visit(tree)
     print('')
     print('Symbol Table contents:')
-    print(symtab_builder.symbol_table)
+    print(analyzer.symbol_table)
 
     interpreter = Interpreter(tree)
     result = interpreter.evaluate()
