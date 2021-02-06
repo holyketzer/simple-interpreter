@@ -587,11 +587,20 @@ class VarSymbol(Symbol):
     def __str__(self):
         return f"<{self.__class__.__name__}({self.name} : {self.type.name})>"
 
+class ProcedureSymbol(Symbol):
+    def __init__(self, name, params=None):
+        super().__init__(name)
+        self.params = params if params is not None else []
+
+    def __str__(self):
+        return f"<{self.__class__.__name__}(name={self.name}, parameters={self.params})>"
+
 class ScopedSymbolTable(object):
-    def __init__(self, scope_name, scope_level):
+    def __init__(self, scope_name, parent_scope=None):
         self.symbols = {}
         self.scope_name = scope_name
-        self.scope_level = scope_level
+        self.scope_level = 1 if parent_scope is None else parent_scope.scope_level + 1
+        self.parent_scope = parent_scope
         self.init_builtins()
 
     def init_builtins(self):
@@ -609,8 +618,12 @@ class ScopedSymbolTable(object):
     def define(self, symbol):
         self.symbols[symbol.name] = symbol
 
-    def lookup(self, name):
+    def lookup(self, name, current_scope_only=False):
         symbol = self.symbols.get(name)
+
+        if symbol is None and self.parent_scope and not current_scope_only:
+            symbol = self.parent_scope.lookup(name)
+
         return symbol
 
 # Visitors
@@ -626,7 +639,7 @@ class NodeVisitor(object):
 
 class SemanticAnalyzer(NodeVisitor):
     def __init__(self):
-        self.scope = ScopedSymbolTable(scope_name='global', scope_level=1)
+        pass
 
     def visit_BinOpNode(self, node):
         self.visit(node.left)
@@ -640,7 +653,7 @@ class SemanticAnalyzer(NodeVisitor):
 
     def visit_VarNode(self, node):
         var_name = node.value
-        if self.scope.lookup(var_name) is None:
+        if self.current_scope.lookup(var_name) is None:
             raise NameError(f"unknown variable '{var_name}'")
 
     def visit_NoOpNode(self, node):
@@ -652,26 +665,46 @@ class SemanticAnalyzer(NodeVisitor):
 
     def visit_VarDeclNode(self, node):
         var_name = node.var_node.value
-        prev_var_def = self.scope.lookup(var_name)
+        prev_var_def = self.current_scope.lookup(var_name, current_scope_only=True)
 
         if prev_var_def:
             raise NameError(f"variable '{var_name}' already defined as '{prev_var_def.type.name}'")
         else:
             type_name = node.type_node.name
-            type = self.scope.lookup(type_name)
+            type = self.current_scope.lookup(type_name)
 
             if type is None:
                 raise NameError(f"unknown type '{type_name}'")
             else:
                 var_symbol = VarSymbol(var_name, type)
-                self.scope.define(var_symbol)
+                self.current_scope.define(var_symbol)
 
     def visit_CompoundNode(self, node):
         for child in node.children:
             self.visit(child)
 
     def visit_ProcedureDecl(self, node):
+        proc_name = node.proc_name
+        proc_symbol = ProcedureSymbol(proc_name)
+        self.current_scope.define(proc_symbol)
+
+        procedure_scope = ScopedSymbolTable(
+            scope_name=proc_name,
+            parent_scope=self.current_scope,
+        )
+        self.current_scope = procedure_scope
+
+        # Insert parameters into the procedure scope
+        for param in node.params:
+            param_type = self.current_scope.lookup(param.type_node.name)
+            param_name = param.var_node.value
+            var_symbol = VarSymbol(param_name, param_type)
+            self.current_scope.define(var_symbol)
+            proc_symbol.params.append(var_symbol)
+
         self.visit(node.block_node)
+
+        self.current_scope = self.current_scope.parent_scope
 
     def visit_BlockNode(self, node):
         for declaration_node in node.declaration_nodes:
@@ -680,6 +713,8 @@ class SemanticAnalyzer(NodeVisitor):
         self.visit(node.compound_node)
 
     def visit_ProgramNode(self, node):
+        self.global_scope = ScopedSymbolTable(scope_name='global')
+        self.current_scope = self.global_scope
         self.visit(node.block_node)
 
 
@@ -746,20 +781,6 @@ class Interpreter(InterpreterWithParser):
     def visit_ProgramNode(self, node):
         self.visit(node.block_node)
 
-class ReversePolishNotationTranslator(InterpreterWithParser):
-    def visit_BinOpNode(self, node):
-        return f"{self.visit(node.left)} {self.visit(node.right)} {node.op.value}"
-
-    def visit_NumNode(self, node):
-        return str(node.value)
-
-class LISPTranslator(InterpreterWithParser):
-    def visit_BinOpNode(self, node):
-        return f"({node.op.value} {self.visit(node.left)} {self.visit(node.right)})"
-
-    def visit_NumNode(self, node):
-        return str(node.value)
-
 def main():
     text = open(sys.argv[1], 'r').read()
 
@@ -770,7 +791,7 @@ def main():
     analyzer.visit(tree)
     print('')
     print('Symbol Table contents:')
-    print(analyzer.scope)
+    print(analyzer.global_scope)
 
     interpreter = Interpreter(tree)
     result = interpreter.evaluate()

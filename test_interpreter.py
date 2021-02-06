@@ -1,7 +1,6 @@
 import pytest
 
-from interpreter import Lexer, Parser, Interpreter, ReversePolishNotationTranslator, LISPTranslator
-from interpreter import SemanticAnalyzer
+from interpreter import Lexer, Parser, Interpreter, SemanticAnalyzer
 
 @pytest.mark.parametrize(
     "expression, expected_result",
@@ -185,9 +184,14 @@ def test_parser_case_insensitive():
             '''
             PROGRAM Part11;
             VAR
-               number : INTEGER;
-               a, b   : INTEGER;
-               y      : REAL;
+                number : INTEGER;
+                a, b   : INTEGER;
+                y      : REAL;
+
+                procedure p1;
+                    VAR a : real;
+                begin
+                end;
 
             BEGIN {Part11}
                number := 2;

@@ -13,8 +13,14 @@ end;
 VAR
    nnn : INTEGER;
 
-PROCEDURE p2;
+PROCEDURE p2(b : REAL);
    var x2 : INTEGER;
+
+   PROCEDURE p22(x : INTEGER);
+      var xx : INTEGER;
+   begin
+      xx := x;
+   end;
 begin
    x2 := 1;
 end;
