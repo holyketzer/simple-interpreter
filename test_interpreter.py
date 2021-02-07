@@ -99,9 +99,9 @@ def test_parser(expression, expected_result):
 def test_expressions(expression, expected_result):
     tree = Parser(Lexer(f"PROGRAM test; BEGIN a := {expression} END.")).parse()
     interpreter = Interpreter(tree)
-    interpreter.evaluate()
+    top_stack_frame = interpreter.evaluate()
 
-    assert expected_result == interpreter.global_scope['a']
+    assert expected_result == top_stack_frame['a']
 
 @pytest.mark.parametrize(
     "expression, error",
@@ -160,13 +160,13 @@ def test_parser_case_insensitive():
     SemanticAnalyzer().visit(tree)
 
     interpreter = Interpreter(tree)
-    interpreter.evaluate()
+    top_stack_frame = interpreter.evaluate()
 
-    assert interpreter.global_scope['a'] == 2
-    assert interpreter.global_scope['_b'] == 25
-    assert interpreter.global_scope['c'] == 27
-    assert interpreter.global_scope['x'] == 11
-    assert interpreter.global_scope['y'] == 20 / 7 + 3.14
+    assert top_stack_frame['a'] == 2
+    assert top_stack_frame['_b'] == 25
+    assert top_stack_frame['c'] == 27
+    assert top_stack_frame['x'] == 11
+    assert top_stack_frame['y'] == 20 / 7 + 3.14
 
 @pytest.mark.parametrize(
     "sources, expected_error",

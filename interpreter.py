@@ -946,10 +946,66 @@ class SourceToSourceTranslator(NodeVisitor):
         block = self.visit(node.block_node)
         return f"program {node.name};\n{block}. {{END OF {node.name}}}"
 
+class CallStack:
+    def __init__(self):
+        self.frames = []
+
+    def push(self, stack_frame):
+        self.frames.append(stack_frame)
+
+    def pop(self):
+        return self.frames.pop()
+
+    def peek(self):
+        return self.frames[-1]
+
+    def __str__(self):
+        s = '\n'.join(repr(stack_frame) for stack_frame in reversed(self.frames))
+        s = f'CALL STACK\n{s}\n'
+        return s
+
+    __repr__ = __str__
+
+class StackFrameType(Enum):
+    PROGRAM = 'PROGRAM'
+
+class StackFrame:
+    def __init__(self, name, type, nesting_level):
+        self.name = name
+        self.type = type
+        self.nesting_level = nesting_level
+        self.members = {}
+
+    def __setitem__(self, key, value):
+        self.members[key] = value
+
+    def __getitem__(self, key):
+        return self.members[key]
+
+    def get(self, key):
+        return self.members.get(key)
+
+    def __str__(self):
+        lines = [
+            '{level}: {type} {name}'.format(
+                level=self.nesting_level,
+                type=self.type.value,
+                name=self.name,
+            )
+        ]
+
+        for name, val in self.members.items():
+            lines.append(f'   {name:<20}: {val}')
+
+        s = '\n'.join(lines)
+        return s
+
+    __repr__ = __str__
+
 class Interpreter(NodeVisitor):
     def __init__(self, tree):
         self.tree = tree
-        self.global_scope = {}
+        self.call_stack = CallStack()
 
     def evaluate(self):
         return self.visit(self.tree)
@@ -978,8 +1034,10 @@ class Interpreter(NodeVisitor):
         return node.value
 
     def visit_VarNode(self, node):
-        if node.value in self.global_scope:
-            return self.global_scope[node.value]
+        stack_frame = self.call_stack.peek()
+
+        if node.value in stack_frame.members:
+            return stack_frame[node.value]
         else:
             raise NameError(node.value)
 
@@ -987,10 +1045,12 @@ class Interpreter(NodeVisitor):
         pass
 
     def visit_AssignNode(self, node):
-        self.global_scope[node.var_node.value] = self.visit(node.expr_node)
+        stack_frame = self.call_stack.peek()
+        stack_frame[node.var_node.value] = self.visit(node.expr_node)
 
     def visit_VarDeclNode(self, node):
-        self.global_scope[node.var_node.value] = 0
+        stack_frame = self.call_stack.peek()
+        stack_frame[node.var_node.value] = 0
 
     def visit_CompoundNode(self, node):
         for child in node.children:
@@ -1009,7 +1069,17 @@ class Interpreter(NodeVisitor):
         self.visit(node.compound_node)
 
     def visit_ProgramNode(self, node):
+        self.call_stack.push(
+            StackFrame(
+                name=node.name,
+                type=StackFrameType.PROGRAM,
+                nesting_level=1,
+            )
+        )
+
         self.visit(node.block_node)
+
+        return self.call_stack.pop()
 
 def main():
     text = open(sys.argv[1], 'r').read()
@@ -1024,13 +1094,11 @@ def main():
     print(analyzer.global_scope)
 
     interpreter = Interpreter(tree)
-    result = interpreter.evaluate()
+    top_stack_frame = interpreter.evaluate()
 
     print('')
-    print('Run-time GLOBAL_SCOPE contents:')
-    for k, v in sorted(interpreter.global_scope.items()):
-        print('{} = {}'.format(k, v))
-
+    print('Top stack frame:')
+    print(top_stack_frame)
 
 if __name__ == '__main__':
     main()
