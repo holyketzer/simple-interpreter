@@ -48,6 +48,9 @@ from enum import Enum
 #     | INTEGER
 #     | REAL
 
+# proccall_statement:
+#     | ID LPAREN (expr (COMMA expr)*)? RPAREN
+
 # compound_statement:
 #     | BEGIN statement_list end
 
@@ -57,6 +60,7 @@ from enum import Enum
 
 # statement:
 #     | compound_statement
+#     | proccall_statement
 #     | assignment_statement
 #     | empty
 
@@ -84,10 +88,11 @@ from enum import Enum
 # empty:
 
 class ErrorCode(Enum):
-    UNEXPECTED_TOKEN = 'Unexpected token'
-    ID_NOT_FOUND     = 'Identifier not found'
-    DUPLICATE_ID     = 'Duplicate id found'
-    UNKNOWN_SYMBOL   = 'Unknown symbol'
+    UNEXPECTED_TOKEN   = 'Unexpected token'
+    ID_NOT_FOUND       = 'Identifier not found'
+    DUPLICATE_ID       = 'Duplicate id found'
+    UNKNOWN_SYMBOL     = 'Unknown symbol'
+    SIGNATURE_MISMATCH = 'Signature mismatch'
 
 class Error(Exception):
     def __init__(self, error_code=None, token=None, message=None):
@@ -423,6 +428,12 @@ class ProcedureDecl(BaseNode):
         self.params = params
         self.block_node = block_node
 
+class ProcedureCallNode(BaseNode):
+    def __init__(self, proc_name, actual_params, token):
+        self.proc_name = proc_name
+        self.actual_params = actual_params
+        self.token = token
+
 class BlockNode(BaseNode):
     def __init__(self, declaration_nodes, compound_node):
         self.declaration_nodes = declaration_nodes
@@ -581,12 +592,29 @@ class Parser:
         if self.current_token.type == TokenType.BEGIN:
             return self.compound_statement()
         elif self.current_token.type == TokenType.ID:
-            return self.assignment_statement()
+            id_node = self.variable()
+            if self.current_token.type == TokenType.LPAREN:
+                return self.proccall_statement(id_node)
+            else:
+                return self.assignment_statement(id_node)
         else:
             return NoOpNode()
 
-    def assignment_statement(self):
-        var_node = self.variable()
+    def proccall_statement(self, id_node):
+        self.eat(TokenType.LPAREN)
+        params = []
+
+        if self.current_token.type != TokenType.RPAREN:
+            params.append(self.expr())
+
+            while self.current_token.type == TokenType.COMMA:
+                self.eat(TokenType.COMMA)
+                params.append(self.expr())
+
+        self.eat(TokenType.RPAREN)
+        return ProcedureCallNode(id_node.value, params, id_node.token)
+
+    def assignment_statement(self, var_node):
         self.eat(TokenType.ASSIGN)
         expr_node = self.expr()
         return AssignNode(var_node, expr_node)
@@ -807,6 +835,30 @@ class SemanticAnalyzer(NodeVisitor):
 
         self.current_scope = self.current_scope.parent_scope
 
+    def visit_ProcedureCallNode(self, node):
+        proc_name = node.proc_name
+        proc_symbol = self.current_scope.lookup(proc_name)
+
+        if proc_symbol:
+            expected_params_count = len(proc_symbol.params)
+            actual_params_count = len(node.actual_params)
+
+            if expected_params_count != actual_params_count:
+                self.error(
+                    error_code=ErrorCode.SIGNATURE_MISMATCH,
+                    token=node.token,
+                    msg=f"{proc_name} expected {expected_params_count} parameters got {actual_params_count}",
+                )
+
+            for param_node in node.actual_params:
+                self.visit(param_node)
+        else:
+            self.error(
+                error_code=ErrorCode.UNKNOWN_SYMBOL,
+                token=node.token,
+                msg=f"unknown procedure '{proc_name}'",
+            )
+
     def visit_BlockNode(self, node):
         for declaration_node in node.declaration_nodes:
             self.visit(declaration_node)
@@ -945,6 +997,9 @@ class Interpreter(NodeVisitor):
             self.visit(child)
 
     def visit_ProcedureDecl(self, node):
+        pass
+
+    def visit_ProcedureCallNode(self, node):
         pass
 
     def visit_BlockNode(self, node):

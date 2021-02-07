@@ -145,6 +145,7 @@ def test_parser_case_insensitive():
            END;
            x := 11;
            y := 20 / 7 + 3.14;
+           P1(1, x, y);
            { writeln('a = ', a); }
            { writeln('b = ', _b); }
            { writeln('c = ', c); }
