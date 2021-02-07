@@ -433,6 +433,7 @@ class ProcedureCallNode(BaseNode):
         self.proc_name = proc_name
         self.actual_params = actual_params
         self.token = token
+        self.proc_symbol = None
 
 class BlockNode(BaseNode):
     def __init__(self, declaration_nodes, compound_node):
@@ -698,8 +699,9 @@ class VarSymbol(Symbol):
         return f"<{self.__class__.__name__}({self.name} : {self.type.name})>"
 
 class ProcedureSymbol(Symbol):
-    def __init__(self, name, params=None):
+    def __init__(self, name, block_node=None, params=None):
         super().__init__(name)
+        self.block_node = block_node
         self.params = params if params is not None else []
 
     def __str__(self):
@@ -814,7 +816,7 @@ class SemanticAnalyzer(NodeVisitor):
 
     def visit_ProcedureDecl(self, node):
         proc_name = node.proc_name
-        proc_symbol = ProcedureSymbol(proc_name)
+        proc_symbol = ProcedureSymbol(proc_name, block_node=node.block_node)
         self.current_scope.define(proc_symbol)
 
         procedure_scope = ScopedSymbolTable(
@@ -840,6 +842,8 @@ class SemanticAnalyzer(NodeVisitor):
         proc_symbol = self.current_scope.lookup(proc_name)
 
         if proc_symbol:
+            node.proc_symbol = proc_symbol
+
             expected_params_count = len(proc_symbol.params)
             actual_params_count = len(node.actual_params)
 
@@ -968,6 +972,7 @@ class CallStack:
 
 class StackFrameType(Enum):
     PROGRAM = 'PROGRAM'
+    PROCEDURE = 'PROCEDURE'
 
 class StackFrame:
     def __init__(self, name, type, nesting_level):
@@ -1060,7 +1065,21 @@ class Interpreter(NodeVisitor):
         pass
 
     def visit_ProcedureCallNode(self, node):
-        pass
+        proc_name = node.proc_name
+        proc_symbol = node.proc_symbol
+
+        stack_frame = StackFrame(
+            name=proc_name,
+            type=StackFrameType.PROCEDURE,
+            nesting_level=self.call_stack.peek().nesting_level + 1,
+        )
+
+        for formal_param, actual_param in zip(proc_symbol.params, node.actual_params):
+            stack_frame[formal_param.name] = self.visit(actual_param)
+
+        self.call_stack.push(stack_frame)
+        self.visit(proc_symbol.block_node)
+        self.call_stack.pop()
 
     def visit_BlockNode(self, node):
         for declaration_node in node.declaration_nodes:
