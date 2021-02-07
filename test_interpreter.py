@@ -97,9 +97,10 @@ def test_parser(expression, expected_result):
     ]
 )
 def test_expressions(expression, expected_result):
-    tree = Parser(Lexer(f"PROGRAM test; BEGIN a := {expression} END.")).parse()
-    interpreter = Interpreter(tree)
-    top_stack_frame = interpreter.evaluate()
+    tree = Parser(Lexer(f"PROGRAM test; var a : real; BEGIN a := {expression} END.")).parse()
+    SemanticAnalyzer().analyze(tree)
+    interpreter = Interpreter()
+    top_stack_frame = interpreter.run(tree)
 
     assert expected_result == top_stack_frame['a']
 
@@ -119,54 +120,47 @@ def test_expressions(expression, expected_result):
 def test_invalid_expression(expression, error):
     with pytest.raises(Exception, match=re.escape(error)):
         tree = Parser(Lexer(f"PROGRAM test; BEGIN a := {expression} END.")).parse()
-        Interpreter(tree).evaluate()
+        Interpreter().run(tree)
 
 def test_parser_case_insensitive():
     sources = '''
         PROGRAM Part10;
 
         VAR
-           number     : INTEGER;
-           a, _b, c, x : INTEGER;
-           y          : REAL;
+           x : INTEGER;
+           y : REAL;
 
-        PROCEDURE P1(z, z2: REAL; z3 : integer);
+        PROCEDURE P1(z : REAL; i : integer);
             VAR A2 : REAL;
+
+            procedure p2(a : INTEGER);
+            begin
+                a2 := a + 1;
+            end;
         BEGIN {P1}
-            a := 1
+            p2(1); {2}
+            x := x + a2 + z + i; {6}
+            y := x * 2; {12}
         END;  {P1}
 
         beGin {Part10}
            BEGIN
-              number := 2;
-              A := number;
-              _b := 10 * a + 10 * number DIV 4;
-              C := a - - _b
+              x := 1;
+              Y := x / 3;
            END;
-           x := 11;
-           y := 20 / 7 + 3.14;
-           P1(1, x, y);
-           { writeln('a = ', a); }
-           { writeln('b = ', _b); }
-           { writeln('c = ', c); }
-           { writeln('number = ', number); }
-           { writeln('x = ', x); }
-           { writeln('y = ', y); }
+           P1(1, 2);
         End.  {Part10}
 
         '''
 
     tree = Parser(Lexer(sources)).parse()
-    SemanticAnalyzer().visit(tree)
+    SemanticAnalyzer().analyze(tree)
 
-    interpreter = Interpreter(tree)
-    top_stack_frame = interpreter.evaluate()
+    interpreter = Interpreter()
+    top_stack_frame = interpreter.run(tree)
 
-    assert top_stack_frame['a'] == 2
-    assert top_stack_frame['_b'] == 25
-    assert top_stack_frame['c'] == 27
-    assert top_stack_frame['x'] == 11
-    assert top_stack_frame['y'] == 20 / 7 + 3.14
+    assert top_stack_frame['x'] == 6
+    assert top_stack_frame['y'] == 12
 
 @pytest.mark.parametrize(
     "sources, expected_error",

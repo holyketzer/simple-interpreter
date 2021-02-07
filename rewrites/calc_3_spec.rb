@@ -1,4 +1,4 @@
-require './calc.rb'
+require './calc_3.rb'
 
 RSpec.describe Lexer do
   subject { lexer.all_tokens  }

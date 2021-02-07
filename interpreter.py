@@ -753,6 +753,9 @@ class SemanticAnalyzer(NodeVisitor):
         self.current_scope = ScopedSymbolTable(scope_name='builtins')
         self.current_scope.init_builtins()
 
+    def analyze(self, tree):
+        self.visit(tree)
+
     def error(self, error_code, token, msg=None):
         raise SemanticError(
             error_code=error_code,
@@ -975,20 +978,39 @@ class StackFrameType(Enum):
     PROCEDURE = 'PROCEDURE'
 
 class StackFrame:
-    def __init__(self, name, type, nesting_level):
+    def __init__(self, name, type, parent_frame=None):
         self.name = name
         self.type = type
-        self.nesting_level = nesting_level
+        self.parent_frame = parent_frame
+        self.nesting_level = parent_frame.nesting_level + 1 if parent_frame else 1
         self.members = {}
 
     def __setitem__(self, key, value):
-        self.members[key] = value
+        if key in self.members:
+            self.members[key] = value
+        elif self.parent_frame:
+            self.parent_frame[key] = value
+        else:
+            raise NameError(key)
 
     def __getitem__(self, key):
-        return self.members[key]
+        if key in self.members:
+            return self.members[key]
+        elif self.parent_frame:
+            return self.parent_frame[key]
+        else:
+            raise NameError(key)
 
-    def get(self, key):
-        return self.members.get(key)
+    def declare(self, key, value):
+        self.members[key] = value
+
+    def has_member(self, key):
+        if key in self.members:
+            return True
+        elif self.parent_frame:
+            return self.parent_frame.has_member(key)
+        else:
+            return False
 
     def __str__(self):
         lines = [
@@ -1008,12 +1030,11 @@ class StackFrame:
     __repr__ = __str__
 
 class Interpreter(NodeVisitor):
-    def __init__(self, tree):
-        self.tree = tree
+    def __init__(self):
         self.call_stack = CallStack()
 
-    def evaluate(self):
-        return self.visit(self.tree)
+    def run(self, tree):
+        return self.visit(tree)
 
     def visit_BinOpNode(self, node):
         if node.op.type == TokenType.PLUS:
@@ -1027,7 +1048,7 @@ class Interpreter(NodeVisitor):
         elif node.op.type == TokenType.INT_DIV:
             return self.visit(node.left) // self.visit(node.right)
         else:
-            raise NameError(f"unsupported binary op {node.op}")
+            raise NameError(f"unsupported binary op {node.op} at {node.token.position()}")
 
     def visit_UnaryOpNode(self, node):
         if node.op.type == TokenType.MINUS:
@@ -1041,10 +1062,10 @@ class Interpreter(NodeVisitor):
     def visit_VarNode(self, node):
         stack_frame = self.call_stack.peek()
 
-        if node.value in stack_frame.members:
+        if stack_frame.has_member(node.value):
             return stack_frame[node.value]
         else:
-            raise NameError(node.value)
+            raise NameError(f"{node.value} at {node.token.position()}")
 
     def visit_NoOpNode(self, node):
         pass
@@ -1055,7 +1076,7 @@ class Interpreter(NodeVisitor):
 
     def visit_VarDeclNode(self, node):
         stack_frame = self.call_stack.peek()
-        stack_frame[node.var_node.value] = 0
+        stack_frame.declare(node.var_node.value, 0)
 
     def visit_CompoundNode(self, node):
         for child in node.children:
@@ -1071,11 +1092,11 @@ class Interpreter(NodeVisitor):
         stack_frame = StackFrame(
             name=proc_name,
             type=StackFrameType.PROCEDURE,
-            nesting_level=self.call_stack.peek().nesting_level + 1,
+            parent_frame=self.call_stack.peek(),
         )
 
         for formal_param, actual_param in zip(proc_symbol.params, node.actual_params):
-            stack_frame[formal_param.name] = self.visit(actual_param)
+            stack_frame.declare(formal_param.name, self.visit(actual_param))
 
         self.call_stack.push(stack_frame)
         self.visit(proc_symbol.block_node)
@@ -1092,7 +1113,6 @@ class Interpreter(NodeVisitor):
             StackFrame(
                 name=node.name,
                 type=StackFrameType.PROGRAM,
-                nesting_level=1,
             )
         )
 
@@ -1107,13 +1127,13 @@ def main():
     parser = Parser(lexer)
     tree = parser.parse()
     analyzer = SemanticAnalyzer()
-    analyzer.visit(tree)
+    analyzer.analyze(tree)
     print(analyzer.current_scope)
     print('')
     print(analyzer.global_scope)
 
-    interpreter = Interpreter(tree)
-    top_stack_frame = interpreter.evaluate()
+    interpreter = Interpreter()
+    top_stack_frame = interpreter.run(tree)
 
     print('')
     print('Top stack frame:')
